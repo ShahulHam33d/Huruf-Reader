@@ -1,0 +1,116 @@
+%PDF-1.4
+%âãÏÓ
+1 0 obj
+<<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj
+<<
+  /Type /Pages
+  /Kids [3 0 R]
+  /Count 1
+>>
+endobj
+3 0 obj
+<<
+  /Type /Page
+  /Parent 2 0 R
+  /MediaBox [0 0 612 792]
+  /Contents 4 0 R
+  /Resources <<
+    /Font <<
+      /F1 5 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj
+<<
+  /Length 359
+>>
+stream
+BT
+/F1 18 Tf
+50 720 Td
+(HurufReader Architecture Spike Phase 0) Tj
+0 -36 Td
+/F1 12 Tf
+(This is the first sentence that will be tested with highlighting in HurufReader.) Tj
+0 -24 Td
+(This is the second sentence that will be tested with highlighting in HurufReader.) Tj
+0 -24 Td
+(Adobe Acrobat and Microsoft Edge will render these highlights identically.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<<
+  /Type /Font
+  /Subtype /Type1
+  /BaseFont /Helvetica
+>>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000019 00000 n 
+0000000072 00000 n 
+0000000135 00000 n 
+0000000287 00000 n 
+0000000699 00000 n 
+trailer
+<<
+  /Size 6
+  /Root 1 0 R
+>>
+startxref
+775
+%%EOF
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R>>>> /Annots [6 0 R 7 0 R]>>
+endobj
+6 0 obj
+<< /Type /Annot /Subtype /Highlight /CreationDate (D:20261009181824) /Rect [49.3272005618 680.2488010079 453.3083902895 695.5344015956] /F 4 /Border [0 0 0] /Rotate 0 /QuadPoints [49.9991912842 694.6719360352 452.6390380859 694.6719360352 49.9991912842 681.0772094727 452.6390380859 681.0772094727] /C [1 0.9411764706 0.4] /CA 1 /AP << /N 8 0 R>>>>
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /Highlight /CreationDate (D:20261009181824) /Rect [49.3272005618 656.2512019426 472.6475893557 671.5368025303] /F 4 /Border [0 0 0] /Rotate 0 /QuadPoints [49.9991912842 670.6756591797 472.0188598633 670.6756591797 49.9991912842 657.0809936523 472.0188598633 657.0809936523] /C [1 0.9411764706 0.4] /CA 1 /AP << /N 9 0 R>>>>
+endobj
+8 0 obj
+<< /FormType 1 /Subtype /Form /Type /XObject /BBox [49.3272005618 680.2488010079 453.3083902895 695.5344015956] /Length 87 /Resources << /ExtGState << /R0 << /BM /Multiply>>>>>>>> stream
+1 0.94 0.4 rg
+/R0 gs
+49.33 680.25 m
+49.33 695.53 l
+453.31 695.53 l
+453.31 680.25 l
+h
+f*
+endstream
+endobj
+9 0 obj
+<< /FormType 1 /Subtype /Form /Type /XObject /BBox [49.3272005618 656.2512019426 472.6475893557 671.5368025303] /Length 87 /Resources << /ExtGState << /R0 << /BM /Multiply>>>>>>>> stream
+1 0.94 0.4 rg
+/R0 gs
+49.33 656.25 m
+49.33 671.54 l
+472.65 671.54 l
+472.65 656.25 l
+h
+f*
+endstream
+endobj
+xref
+3 1
+0000000962 00000 n
+6 4
+0000001107 00000 n
+0000001471 00000 n
+0000001835 00000 n
+0000002135 00000 n
+trailer
+<< /Prev 775 /Size 10 /Root 1 0 R>>
+startxref
+2435
+%%EOF
