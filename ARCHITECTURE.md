@@ -1,36 +1,34 @@
-# HurufReader — Phase 0 Architecture
+# HurufReader — Architecture
 
-## Stack & Pinned Versions
-- **Runtime / Shell**: Electron `44.7.0` (Node `24.16.0`, Chromium `134`)
-- **PDF Engine**: PDF.js (`pdfjs-dist` `6.4.299`)
-- **Language & Styling**: Plain JavaScript (ES Modules + CommonJS), Stock CSS
+## Stack & Pinned Dependencies
+- Electron 44.7.0 (Chromium 134, Node 24.16.0), plain JavaScript, pdfjs-dist 6.4.299.
+- Security: contextIsolation true, nodeIntegration false, sandbox true, strict CSP, no network.
 
-## Folder Structure
-```
-HurufReader/
-├── main.js             # Electron main process (lifecycle, menus, native dialogs, IPC)
-├── preload.js          # Context bridge (secure minimal IPC)
-├── index.html          # Viewer host DOM
-├── renderer.js         # PDF.js viewer & annotation editor integration
-├── verify.js           # CLI verification tool using pdfjs-dist
-├── package.json        # Manifest & pinned dependencies
-└── ARCHITECTURE.md     # Architectural specification
-```
+## Multi-Document Tab Architecture
+- **Tab Management**: One Electron `WebContentsView` per document tab. Each view loads `viewer.html` hosting an independent PDF.js viewer instance.
+- **Main Window (`index.html`)**: Renders native tab strip (title, unsaved dot, close button, `+` button) and empty state ("Open a PDF with Ctrl+O").
+- **View Switching**: `mainWindow.contentView.addChildView()` / `removeChildView()`, bounds pegged to window content below tab bar (y: 40).
+- **Navigation Shortcuts**: `Ctrl+O` (open), `Ctrl+W` (close), `Ctrl+Tab` / `Ctrl+Shift+Tab` (cycle tabs). Duplicate file opens switch to existing tab.
 
 ## IPC Flow
-1. **Open (Ctrl+O)**: Main triggers `dialog.showOpenDialog()`, reads binary buffer, sends `open-pdf` event to renderer. Renderer invokes `PDFViewerApplication.open()`.
-2. **Save As (Ctrl+Shift+S)**: Main sends `request-save-pdf`. Renderer calls `PDFViewerApplication.pdfDocument.saveDocument()`, gets bytes with serialized annotations, invokes `save-pdf-bytes`. Main shows `dialog.showSaveDialog()`, validates target is not the original file, and writes bytes.
+- **Tabs**: `tabBarAPI` sends `tab-switch`, `tab-close`, `tab-open-dialog`. Main broadcasts `tabs-updated`.
+- **Viewer**: `viewerAPI` receives `load-document` (buffer + theme). Sends `tab-set-modified` and `save-pdf-bytes`.
+- **Save As**: Main triggers `request-save-pdf`. Viewer serializes via `pdfDocument.saveDocument()`. Main displays `showSaveDialog()`, blocks overwrite of original file, and writes bytes.
 
-## Security Settings
-- `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`
-- `enableScripting: false` configured in PDF.js display & worker options
-- Remote navigation & window popups denied (`will-navigate`, `setWindowOpenHandler`)
-- Content Security Policy: `default-src 'self'`, no external network access
+## Unsaved Changes Tracking
+- Monitored via PDF.js `pdfDocument.annotationStorage.onSetModified` and `onResetModified`.
+- Modified tabs display a dot indicator on the tab bar.
+- Tab/window close with unsaved changes shows native dialog with 3 choices: [Save As, Discard, Cancel].
 
-## Findings from Verification & Stress Testing
-- `pdfDocument.saveDocument()` produces standard PDF `/Type /Annot` with `/Subtype /Highlight` dictionary entries and QuadPoints, compatible with Adobe Acrobat and Edge.
-- Highlight editor requires `annotationEditorHighlightColors` configuration for color map resolution during selection.
+## Dark Mode & Invert Page Colors
+- `View > Dark Mode` (`Ctrl+Shift+D`): toggles `.dark-theme` on tab bar and viewer interface.
+- `View > Invert Page Colors`: toggles `.invert-page-colors` applying CSS filter (`invert(0.9) hue-rotate(180deg)`) on page rendering. PDF data remains unaltered.
+- State saved to `%APPDATA%/hurufreader/settings.json` and restored on startup.
+
+## Error Handling
+- **Corrupted / Invalid**: Missing `%PDF-` header or unparseable PDF triggers native error dialog with plain-language message without opening a tab; technical errors logged to console.
+- **Password Protected**: Captured via PDF.js `loadingTask.onPassword`, prompting in-viewer password dialog with retry on failure and clean tab closure on cancel.
+- **Missing / Inaccessible**: Native error dialog shown on file read failure.
 
 ## Known PDF Quirks
-- **Leading Junk Bytes**: Files with bytes before `%PDF-` (e.g., `\r\n`) cause corrupt Save As outputs because PDF.js writes incremental updates using absolute offsets but resolves xrefs relative to `%PDF-`.
-- **Fix**: Main process scans the first 1024 bytes on open and strips leading bytes before `%PDF-` in memory without modifying the original file on disk.
+- **Leading Junk Bytes**: Files with junk bytes before `%PDF-` break xref resolution during Save As. Main trims initial bytes before `%PDF-` in memory for every file opened.

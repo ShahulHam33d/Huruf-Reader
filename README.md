@@ -1,6 +1,6 @@
 # HurufReader
 
-HurufReader is a Windows PDF reader built with Electron and PDF.js, featuring native file handling, text highlighting, and standards-compliant PDF saving.
+HurufReader is a Windows PDF reader built with Electron and PDF.js, featuring multi-document tabs, text highlighting, PDF.js stock viewer controls, dark mode, display page inversion, and native error handling.
 
 ## Prerequisites
 - Node.js (v20+ or v24)
@@ -9,32 +9,53 @@ HurufReader is a Windows PDF reader built with Electron and PDF.js, featuring na
 ## Installation & Launch
 
 ```bash
-# Install dependencies (pinned exact versions)
+# Install pinned dependencies
 npm install
 
-# Start the HurufReader application
+# Start the application
 npm start
 ```
 
-## Running Verification
-
-To inspect PDF annotations directly via Node using PDF.js:
+## Automated Verification
 
 ```bash
-# Verify original file (e.g. sample.pdf)
-node verify.js sample.pdf
+# Run headless verification across all test-suite PDFs
+node headless-verify.js
 
-# Verify saved highlighted file (e.g. sample_saved.pdf)
+# Verify specific PDF annotations and PDF structure
 node verify.js sample_saved.pdf
+node verify.js test-pdfs/Dream_Textbook.pdf
 ```
 
-## Manual Verification Test
+## Manual Test Checklist
 
-1. Launch HurufReader using `npm start`.
-2. Open a text PDF via **File > Open** (`Ctrl+O`).
-3. Select and highlight two sentences using the cursor.
-4. Save the annotated PDF via **File > Save As** (`Ctrl+Shift+S`) to a new file name.
-5. Open the saved copy in **Adobe Acrobat Reader** and **Microsoft Edge**:
-   - The highlights must be clearly visible in both applications.
-6. Reopen the saved copy in **HurufReader**:
-   - The highlights must persist and render identically.
+### 1. Tabs (Step 1)
+- [ ] **Open Multiple PDFs**: Open 2 or more PDFs using `Ctrl+O` or the `+` button in the tab bar. Confirm each opens in a new tab with its own scroll and view state.
+- [ ] **Duplicate Prevention**: Try opening a PDF that is already open. Verify HurufReader switches to the existing tab instead of opening a duplicate.
+- [ ] **Tab Switching**: Switch tabs by clicking tab headers, pressing `Ctrl+Tab` (next), and pressing `Ctrl+Shift+Tab` (previous).
+- [ ] **Tab Closing**: Close active tab using `Ctrl+W` or clicking `×` on the tab header.
+- [ ] **Empty State**: Close all open tabs. Confirm an empty window appears displaying: `Open a PDF with Ctrl+O`.
+
+### 2. Unsaved Changes (Step 2)
+- [ ] **Dot Indicator**: Select text and add a highlight. Verify a dot indicator appears on the tab header.
+- [ ] **Prompt on Tab Close**: Click `×` or press `Ctrl+W` on a modified tab. Confirm native dialog displays with `[Save As, Discard, Cancel]`.
+- [ ] **Cancel Choice**: Choose `Cancel`. Confirm the tab remains open and unclosed.
+- [ ] **Save As Choice**: Choose `Save As`. Confirm `showSaveDialog` opens. Verify attempting to overwrite original file is blocked. Save to new name and confirm tab closes.
+- [ ] **Discard Choice**: Choose `Discard`. Confirm tab closes without saving.
+- [ ] **Prompt on Window Close**: Close window while multiple tabs have unsaved changes. Confirm each modified tab prompts sequentially; cancelling halts window closure.
+
+### 3. Stock Viewer Features (Step 3)
+- [ ] **Sidebar (Outline & Thumbnails)**: Click the sidebar toggle icon. Switch between "Thumbnails" and "Outline" tabs. Click a thumbnail to jump to page. Click an outline item to jump to section destination.
+- [ ] **Find Bar**: Press `Ctrl+F` or click search icon. Type a search term, verify match count (e.g. `1 of 12`), use Next/Previous buttons and Enter/Shift+Enter. Toggle "Highlight All". Press `Escape` to close find bar.
+- [ ] **Zoom Controls**: Use Zoom In (`+`), Zoom Out (`-`), and preset scale options (Page Width, Page Fit, 100%, 150%). Use `Ctrl + Mouse Wheel` to zoom smoothly.
+- [ ] **Page Navigation & Go-to-Page**: Use Page Up/Down buttons. Type a page number into the input box and press Enter to jump to that page.
+
+### 4. Dark Mode & Page Inversion (Step 4)
+- [ ] **Dark Mode**: Toggle `View > Dark Mode` (`Ctrl+Shift+D`). Confirm the tab bar, toolbar, sidebar, and container darken.
+- [ ] **Invert Page Colors**: Toggle `View > Invert Page Colors`. Confirm page content colors invert via CSS filter without modifying PDF data.
+- [ ] **Persistence**: Quit the application and restart. Confirm Dark Mode and Invert Page Colors choices are restored from `%APPDATA%/hurufreader/settings.json`.
+
+### 5. Clean Errors (Step 5)
+- [ ] **Corrupted / Invalid File**: Attempt to open a text or corrupted file. Confirm native error dialog appears with file name and plain-language message, console logs error, and no tab opens.
+- [ ] **Password-Protected File**: Open a password-protected PDF. Confirm the viewer's password modal displays. Enter invalid password to view retry error. Click Cancel to confirm the tab closes cleanly.
+- [ ] **Missing / Permission File**: Attempt to open a deleted or locked file. Confirm native error dialog appears without blank screen or crash.

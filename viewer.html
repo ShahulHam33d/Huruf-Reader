@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Viewer</title>
+  <link rel="stylesheet" href="./node_modules/pdfjs-dist/web/pdf_viewer.css">
+  <style>
+    :root {
+      --toolbar-bg: #f4f5f7;
+      --toolbar-border: #d0d5dd;
+      --sidebar-bg: #eaecf0;
+      --sidebar-border: #d0d5dd;
+      --text-color: #1f2937;
+      --viewer-bg: #525659;
+      --btn-hover: #e5e7eb;
+      --btn-active: #d1d5db;
+      --input-bg: #ffffff;
+      --input-border: #d0d5dd;
+      --item-active-bg: #dbeafe;
+    }
+
+    html.dark-theme {
+      --toolbar-bg: #282828;
+      --toolbar-border: #181818;
+      --sidebar-bg: #1f1f1f;
+      --sidebar-border: #181818;
+      --text-color: #e0e0e0;
+      --viewer-bg: #141414;
+      --btn-hover: #383838;
+      --btn-active: #484848;
+      --input-bg: #333333;
+      --input-border: #444444;
+      --item-active-bg: #1e3a5f;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--viewer-bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-color);
+      user-select: none;
+    }
+
+    #appContainer {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Toolbar */
+    #toolbar {
+      height: 38px;
+      background-color: var(--toolbar-bg);
+      border-bottom: 1px solid var(--toolbar-border);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 6px;
+      box-sizing: border-box;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .toolbar-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--text-color);
+      padding: 0;
+    }
+
+    .toolbar-btn:hover {
+      background-color: var(--btn-hover);
+    }
+
+    .toolbar-btn:active, .toolbar-btn.active {
+      background-color: var(--btn-active);
+      border-color: var(--toolbar-border);
+    }
+
+    .toolbar-btn img {
+      width: 16px;
+      height: 16px;
+      pointer-events: none;
+    }
+
+    html.dark-theme .toolbar-btn img {
+      filter: invert(0.85);
+    }
+
+    .separator {
+      width: 1px;
+      height: 20px;
+      background-color: var(--toolbar-border);
+      margin: 0 4px;
+    }
+
+    .page-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+    }
+
+    .page-nav input {
+      width: 44px;
+      height: 24px;
+      text-align: center;
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      background-color: var(--input-bg);
+      color: var(--text-color);
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+
+    .zoom-ctrls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    select#scaleSelect {
+      height: 26px;
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      background-color: var(--input-bg);
+      color: var(--text-color);
+      font-size: 13px;
+      padding: 0 4px;
+      cursor: pointer;
+    }
+
+    /* Main View Area */
+    #mainView {
+      display: flex;
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    #sidebar {
+      width: 240px;
+      background-color: var(--sidebar-bg);
+      border-right: 1px solid var(--sidebar-border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: width 0.15s ease;
+    }
+
+    #sidebar.hidden {
+      display: none;
+    }
+
+    #sidebarTabs {
+      display: flex;
+      border-bottom: 1px solid var(--sidebar-border);
+      background-color: var(--toolbar-bg);
+    }
+
+    .sidebar-tab-btn {
+      flex: 1;
+      padding: 6px 0;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      color: var(--text-color);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .sidebar-tab-btn.active {
+      border-bottom-color: #3b82f6;
+      background-color: var(--sidebar-bg);
+    }
+
+    #sidebarContent {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    /* Outline view */
+    #outlineView {
+      font-size: 13px;
+    }
+
+    .outline-node {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .outline-item-row {
+      display: flex;
+      align-items: center;
+      padding: 2px 4px;
+      border-radius: 3px;
+      margin-bottom: 2px;
+    }
+
+    .outline-item-row:hover {
+      background-color: var(--btn-hover);
+    }
+
+    .outline-toggle {
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 10px;
+      user-select: none;
+      flex-shrink: 0;
+      color: var(--text-color);
+      opacity: 0.7;
+      margin-right: 2px;
+      border-radius: 2px;
+    }
+
+    .outline-toggle:hover {
+      opacity: 1;
+      background-color: var(--btn-active);
+    }
+
+    .outline-toggle-placeholder {
+      width: 16px;
+      flex-shrink: 0;
+      margin-right: 2px;
+    }
+
+    .outline-item {
+      cursor: pointer;
+      color: inherit;
+      text-decoration: none;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      padding: 2px 0;
+    }
+
+    .outline-item.no-dest {
+      opacity: 0.85;
+      font-weight: 500;
+    }
+
+    .outline-children {
+      margin-left: 16px;
+    }
+
+    .outline-children.hidden {
+      display: none;
+    }
+
+    /* Thumbnails view */
+    #thumbnailView {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .thumbnail-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      border: 2px solid transparent;
+    }
+
+    .thumbnail-item:hover {
+      background-color: var(--btn-hover);
+    }
+
+    .thumbnail-item.selected {
+      border-color: #3b82f6;
+      background-color: var(--item-active-bg);
+    }
+
+    .thumbnail-canvas {
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+      background-color: white;
+    }
+
+    .thumbnail-label {
+      font-size: 11px;
+      margin-top: 4px;
+      color: var(--text-color);
+    }
+
+    /* Viewer container */
+    #viewerContainer {
+      flex: 1;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      overflow: auto;
+      background-color: var(--viewer-bg);
+    }
+
+    #mainView.sidebar-open #viewerContainer {
+      left: 240px;
+    }
+
+    /* Find Bar */
+    #findBar {
+      position: absolute;
+      top: 44px;
+      right: 20px;
+      background-color: var(--toolbar-bg);
+      border: 1px solid var(--toolbar-border);
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 100;
+      font-size: 13px;
+    }
+
+    #findBar.hidden {
+      display: none;
+    }
+
+    #findInput {
+      width: 180px;
+      height: 24px;
+      padding: 0 6px;
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      background-color: var(--input-bg);
+      color: var(--text-color);
+      font-size: 13px;
+    }
+
+    #findMsg {
+      font-size: 12px;
+      color: var(--text-color);
+      min-width: 60px;
+    }
+
+    #findBar label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* Invert page colors CSS filter */
+    html.invert-page-colors .pdfViewer .page {
+      filter: invert(0.9) hue-rotate(180deg);
+    }
+
+    /* Password Modal */
+    #passwordOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    #passwordOverlay.hidden {
+      display: none;
+    }
+
+    .modal-box {
+      width: 340px;
+      background: var(--toolbar-bg);
+      border: 1px solid var(--toolbar-border);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+
+    .modal-box h3 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+    }
+
+    .modal-box p {
+      margin: 0 0 12px 0;
+      font-size: 13px;
+      color: var(--text-color);
+    }
+
+    .modal-box input {
+      width: 100%;
+      height: 28px;
+      padding: 0 8px;
+      box-sizing: border-box;
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      background-color: var(--input-bg);
+      color: var(--text-color);
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .modal-error {
+      color: #e53e3e;
+      font-size: 12px;
+      margin-bottom: 12px;
+      min-height: 16px;
+    }
+
+    .modal-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .modal-btn {
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      border: 1px solid var(--toolbar-border);
+      background: var(--input-bg);
+      color: var(--text-color);
+    }
+
+    .modal-btn.primary {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #2563eb;
+    }
+
+    .modal-btn:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div id="appContainer">
+    <!-- Toolbar -->
+    <div id="toolbar">
+      <button id="sidebarToggle" class="toolbar-btn" title="Toggle Sidebar">
+        <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-viewThumbnail.svg" alt="Sidebar">
+      </button>
+
+      <div class="separator"></div>
+
+      <!-- Page navigation -->
+      <div class="page-nav">
+        <button id="pagePrev" class="toolbar-btn" title="Previous Page">
+          <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-pageUp.svg" alt="Prev">
+        </button>
+        <button id="pageNext" class="toolbar-btn" title="Next Page">
+          <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-pageDown.svg" alt="Next">
+        </button>
+        <input type="number" id="pageNumber" min="1" value="1">
+        <span>/ <span id="numPages">--</span></span>
+      </div>
+
+      <div class="separator"></div>
+
+      <!-- Zoom controls -->
+      <div class="zoom-ctrls">
+        <button id="zoomOut" class="toolbar-btn" title="Zoom Out">
+          <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-zoomOut.svg" alt="Zoom Out">
+        </button>
+        <button id="zoomIn" class="toolbar-btn" title="Zoom In">
+          <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-zoomIn.svg" alt="Zoom In">
+        </button>
+        <select id="scaleSelect">
+          <option value="auto">Auto</option>
+          <option value="page-fit">Page Fit</option>
+          <option value="page-width" selected>Page Width</option>
+          <option value="0.5">50%</option>
+          <option value="0.75">75%</option>
+          <option value="1.0">100%</option>
+          <option value="1.25">125%</option>
+          <option value="1.5">150%</option>
+          <option value="2.0">200%</option>
+          <option value="custom" disabled hidden>Custom</option>
+        </select>
+      </div>
+
+      <div class="separator"></div>
+
+      <!-- Find toggle -->
+      <button id="findToggle" class="toolbar-btn" title="Find (Ctrl+F)">
+        <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-search.svg" alt="Find">
+      </button>
+    </div>
+
+    <!-- Main View -->
+    <div id="mainView">
+      <!-- Sidebar -->
+      <div id="sidebar" class="hidden">
+        <div id="sidebarTabs">
+          <button id="tabThumbnailsBtn" class="sidebar-tab-btn active">Thumbnails</button>
+          <button id="tabOutlineBtn" class="sidebar-tab-btn">Outline</button>
+        </div>
+        <div id="sidebarContent">
+          <div id="thumbnailView"></div>
+          <div id="outlineView" style="display: none;"></div>
+        </div>
+      </div>
+
+      <!-- Viewer Container -->
+      <div id="viewerContainer" class="pdfViewerContainer">
+        <div id="viewer" class="pdfViewer"></div>
+      </div>
+
+      <!-- Find Bar -->
+      <div id="findBar" class="hidden">
+        <input type="text" id="findInput" placeholder="Find in document...">
+        <button id="findPrev" class="toolbar-btn" title="Previous match">
+          <img src="./node_modules/pdfjs-dist/web/images/findbarButton-previous.svg" alt="Prev">
+        </button>
+        <button id="findNext" class="toolbar-btn" title="Next match">
+          <img src="./node_modules/pdfjs-dist/web/images/findbarButton-next.svg" alt="Next">
+        </button>
+        <label><input type="checkbox" id="findHighlightAll" checked> Highlight all</label>
+        <span id="findMsg"></span>
+        <button id="findClose" class="toolbar-btn" title="Close find bar">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Password Prompt Modal -->
+  <div id="passwordOverlay" class="hidden">
+    <div class="modal-box">
+      <h3>Password Required</h3>
+      <p id="passwordPromptMsg">This document is password protected. Please enter a password.</p>
+      <input type="password" id="passwordInput" placeholder="Password" autocomplete="off">
+      <div id="passwordError" class="modal-error"></div>
+      <div class="modal-buttons">
+        <button id="passwordCancelBtn" class="modal-btn">Cancel</button>
+        <button id="passwordSubmitBtn" class="modal-btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./viewer.js"></script>
+</body>
+</html>

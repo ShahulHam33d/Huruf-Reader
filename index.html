@@ -4,55 +4,254 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HurufReader</title>
-  <link rel="stylesheet" href="./node_modules/pdfjs-dist/web/pdf_viewer.css">
   <style>
+    :root {
+      --tab-bar-bg: #e1e4e8;
+      --tab-bg: #d1d5db;
+      --tab-text: #24292e;
+      --tab-active-bg: #ffffff;
+      --tab-active-text: #000000;
+      --tab-border: #c0c4c8;
+      --window-bg: #525659;
+      --empty-title: #e5e7eb;
+      --empty-desc: #9ca3af;
+      --btn-hover: #b0b5bc;
+      --dot-color: #e53e3e;
+    }
+
+    html.dark-theme {
+      --tab-bar-bg: #1e1e1e;
+      --tab-bg: #2d2d2d;
+      --tab-text: #cccccc;
+      --tab-active-bg: #3c3c3c;
+      --tab-active-text: #ffffff;
+      --tab-border: #181818;
+      --window-bg: #252526;
+      --empty-title: #e0e0e0;
+      --empty-desc: #888888;
+      --btn-hover: #4a4a4a;
+      --dot-color: #fc8181;
+    }
+
     html, body {
       margin: 0;
       padding: 0;
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background-color: #525659;
-    }
-    #viewerContainer {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      overflow: auto;
-    }
-    #emptyState {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: #d1d5db;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      text-align: center;
+      background-color: var(--window-bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       user-select: none;
+    }
+
+    #tabBar {
+      height: 40px;
+      background-color: var(--tab-bar-bg);
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid var(--tab-border);
+      box-sizing: border-box;
+      padding: 0 4px;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+
+    #tabBar::-webkit-scrollbar {
+      height: 3px;
+    }
+    #tabBar::-webkit-scrollbar-thumb {
+      background: var(--btn-hover);
+    }
+
+    #tabsContainer {
+      display: flex;
+      align-items: center;
+      height: 100%;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+
+    .tab-item {
+      display: flex;
+      align-items: center;
+      height: 32px;
+      max-width: 220px;
+      min-width: 100px;
+      padding: 0 8px 0 10px;
+      background-color: var(--tab-bg);
+      color: var(--tab-text);
+      border-radius: 4px 4px 0 0;
+      font-size: 13px;
+      cursor: pointer;
+      border: 1px solid var(--tab-border);
+      border-bottom: none;
+      box-sizing: border-box;
+      transition: background-color 0.15s ease;
+    }
+
+    .tab-item:hover {
+      background-color: var(--btn-hover);
+    }
+
+    .tab-item.active {
+      background-color: var(--tab-active-bg);
+      color: var(--tab-active-text);
+      font-weight: 500;
+    }
+
+    .tab-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: var(--dot-color);
+      margin-right: 6px;
+      flex-shrink: 0;
+      display: none;
+    }
+
+    .tab-item.modified .tab-dot {
+      display: inline-block;
+    }
+
+    .tab-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       pointer-events: none;
     }
+
+    .tab-close {
+      margin-left: 6px;
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 3px;
+      font-size: 14px;
+      line-height: 1;
+      color: inherit;
+      cursor: pointer;
+      opacity: 0.7;
+    }
+
+    .tab-close:hover {
+      opacity: 1;
+      background-color: rgba(0, 0, 0, 0.15);
+    }
+
+    html.dark-theme .tab-close:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    #newTabBtn {
+      width: 28px;
+      height: 28px;
+      margin-left: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: none;
+      border-radius: 4px;
+      font-size: 18px;
+      color: var(--tab-text);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    #newTabBtn:hover {
+      background-color: var(--btn-hover);
+    }
+
+    #emptyState {
+      position: absolute;
+      top: calc(50% + 20px);
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--empty-title);
+      text-align: center;
+      pointer-events: none;
+    }
+
     #emptyState h2 {
       margin: 0 0 8px 0;
       font-weight: 500;
-      font-size: 20px;
+      font-size: 22px;
     }
+
     #emptyState p {
       margin: 0;
-      font-size: 14px;
-      color: #9ca3af;
+      font-size: 15px;
+      color: var(--empty-desc);
     }
   </style>
 </head>
 <body>
-  <div id="viewerContainer" class="pdfViewerContainer">
-    <div id="viewer" class="pdfViewer"></div>
+  <div id="tabBar">
+    <div id="tabsContainer"></div>
+    <button id="newTabBtn" title="Open PDF (Ctrl+O)">+</button>
   </div>
+
   <div id="emptyState">
     <h2>HurufReader</h2>
-    <p>Press Ctrl+O or use File &gt; Open to open a PDF</p>
+    <p>Open a PDF with Ctrl+O</p>
   </div>
-  <script type="module" src="./renderer.js"></script>
+
+  <script>
+    const tabsContainer = document.getElementById('tabsContainer');
+    const newTabBtn = document.getElementById('newTabBtn');
+
+    newTabBtn.addEventListener('click', () => {
+      if (window.tabBarAPI) {
+        window.tabBarAPI.openFileDialog();
+      }
+    });
+
+    if (window.tabBarAPI) {
+      window.tabBarAPI.onTabsUpdated(({ tabs, activeTabId }) => {
+        tabsContainer.innerHTML = '';
+        tabs.forEach(tab => {
+          const tabEl = document.createElement('div');
+          tabEl.className = 'tab-item' + (tab.id === activeTabId ? ' active' : '') + (tab.modified ? ' modified' : '');
+          tabEl.title = tab.filePath || tab.fileName;
+
+          const dot = document.createElement('span');
+          dot.className = 'tab-dot';
+          tabEl.appendChild(dot);
+
+          const title = document.createElement('span');
+          title.className = 'tab-title';
+          title.textContent = tab.fileName;
+          tabEl.appendChild(title);
+
+          const closeBtn = document.createElement('span');
+          closeBtn.className = 'tab-close';
+          closeBtn.textContent = '×';
+          closeBtn.title = 'Close Tab (Ctrl+W)';
+          closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.tabBarAPI.closeTab(tab.id);
+          });
+          tabEl.appendChild(closeBtn);
+
+          tabEl.addEventListener('click', () => {
+            window.tabBarAPI.switchTab(tab.id);
+          });
+
+          tabsContainer.appendChild(tabEl);
+        });
+      });
+
+      window.tabBarAPI.onThemeUpdated(({ darkMode }) => {
+        if (darkMode) {
+          document.documentElement.classList.add('dark-theme');
+        } else {
+          document.documentElement.classList.remove('dark-theme');
+        }
+      });
+    }
+  </script>
 </body>
 </html>
