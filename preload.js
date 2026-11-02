@@ -32,6 +32,15 @@ contextBridge.exposeInMainWorld('viewerAPI', {
   },
   onThemeUpdated: (callback) => {
     ipcRenderer.on('theme-updated', (event, data) => callback(data));
+  },
+  setAnnotationMode: (mode) => {
+    ipcRenderer.send('tab-set-annotation-mode', mode);
+  },
+  onSetAnnotationMode: (callback) => {
+    ipcRenderer.on('set-annotation-mode', (event, mode) => callback(mode));
+  },
+  pickImageStamp: () => {
+    return ipcRenderer.invoke('dialog-pick-image');
   }
 });
 

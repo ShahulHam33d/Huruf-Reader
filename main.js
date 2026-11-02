@@ -1,6 +1,7 @@
 const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const commands = require('./commands');
 
 const TAB_BAR_HEIGHT = 40;
 let mainWindow = null;
@@ -292,16 +293,16 @@ async function openPDFPath(selectedPath) {
         else switchNextTab();
       } else if (input.control && input.key.toLowerCase() === 'w') {
         event.preventDefault();
-        closeCurrentTab();
+        commands.closeTab();
       } else if (input.control && input.key.toLowerCase() === 'o') {
         event.preventDefault();
-        handleOpenFile();
+        commands.openFile();
       } else if (input.control && input.shift && input.key.toLowerCase() === 'd') {
         event.preventDefault();
-        toggleDarkMode();
+        commands.setDarkMode();
       } else if (input.control && input.shift && input.key.toLowerCase() === 's') {
         event.preventDefault();
-        triggerActiveSaveAs();
+        commands.saveAs();
       }
     }
   });
@@ -311,7 +312,8 @@ async function openPDFPath(selectedPath) {
     filePath: selectedPath,
     fileName,
     view: tabView,
-    modified: false
+    modified: false,
+    annotationMode: 0
   };
 
   tabs.push(tabObj);
@@ -352,19 +354,114 @@ async function handleOpenFile() {
   await openPDFPath(result.filePaths[0]);
 }
 
-function triggerActiveSaveAs() {
-  if (!activeTabId) return;
-  const currentTab = tabs.find(t => t.id === activeTabId);
+function triggerSaveAs(tabId) {
+  const targetId = tabId || activeTabId;
+  if (!targetId) return false;
+  const currentTab = tabs.find(t => t.id === targetId);
   if (currentTab && currentTab.view) {
     currentTab.view.webContents.send('request-save-pdf');
+    return true;
+  }
+  return false;
+}
+
+function setTabAnnotationMode(tabId, mode) {
+  const targetId = tabId || activeTabId;
+  if (!targetId) return false;
+  const currentTab = tabs.find(t => t.id === targetId);
+  if (currentTab) {
+    currentTab.annotationMode = mode;
+    if (currentTab.view && !currentTab.view.webContents.isDestroyed()) {
+      currentTab.view.webContents.send('set-annotation-mode', mode);
+    }
+    return true;
+  }
+  return false;
+}
+
+async function pickImageDialog() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { canceled: true };
+  }
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Image Stamp',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Images (*.png; *.jpg; *.jpeg)', extensions: ['png', 'jpg', 'jpeg'] }
+    ]
+  });
+
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return { canceled: true };
+  }
+
+  const selectedPath = result.filePaths[0];
+  const fileName = path.basename(selectedPath);
+
+  let stat;
+  try {
+    stat = fs.statSync(selectedPath);
+    if (!stat.isFile()) {
+      throw new Error('Not a regular file');
+    }
+  } catch (err) {
+    console.error(`Image stat error for "${selectedPath}":`, err);
+    dialog.showErrorBox(
+      'Cannot Read Image',
+      `Could not read "${fileName}".\n\nThe file was not found or is inaccessible.`
+    );
+    return { error: 'unreadable' };
+  }
+
+  const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB limit
+  if (stat.size > MAX_IMAGE_SIZE) {
+    dialog.showErrorBox(
+      'Image Too Large',
+      `"${fileName}" (${(stat.size / (1024 * 1024)).toFixed(2)} MB) exceeds the 10 MB limit for image stamps.`
+    );
+    return { error: 'too_large' };
+  }
+
+  try {
+    const bytes = fs.readFileSync(selectedPath);
+    const ext = path.extname(selectedPath).toLowerCase();
+    const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+    return {
+      canceled: false,
+      bytes: new Uint8Array(bytes),
+      name: fileName,
+      mimeType
+    };
+  } catch (err) {
+    console.error(`Image read error for "${selectedPath}":`, err);
+    dialog.showErrorBox(
+      'Cannot Read Image',
+      `Failed to read image data from "${fileName}":\n${err.message}`
+    );
+    return { error: 'unreadable' };
   }
 }
+
+// Initialize Command Layer
+commands.initCommands({
+  openPDFPath,
+  handleOpenFile,
+  closeTab,
+  switchTab,
+  triggerSaveAs,
+  toggleDarkMode,
+  toggleInvertColors,
+  setTabAnnotationMode,
+  getActiveTabId: () => activeTabId
+});
 
 function toggleDarkMode(forceVal) {
   settings.darkMode = typeof forceVal === 'boolean' ? forceVal : !settings.darkMode;
   saveSettings();
   broadcastTheme();
   updateMenu();
+  return settings.darkMode;
 }
 
 function toggleInvertColors(forceVal) {
@@ -372,6 +469,7 @@ function toggleInvertColors(forceVal) {
   saveSettings();
   broadcastTheme();
   updateMenu();
+  return settings.invertColors;
 }
 
 function updateMenu() {
@@ -382,17 +480,17 @@ function updateMenu() {
         {
           label: 'Open...',
           accelerator: 'Ctrl+O',
-          click: () => handleOpenFile()
+          click: () => commands.openFile()
         },
         {
           label: 'Save As...',
           accelerator: 'Ctrl+Shift+S',
-          click: () => triggerActiveSaveAs()
+          click: () => commands.saveAs()
         },
         {
           label: 'Close Tab',
           accelerator: 'Ctrl+W',
-          click: () => closeCurrentTab()
+          click: () => commands.closeTab()
         },
         { type: 'separator' },
         {
@@ -410,13 +508,13 @@ function updateMenu() {
           type: 'checkbox',
           checked: settings.darkMode,
           accelerator: 'Ctrl+Shift+D',
-          click: (item) => toggleDarkMode(item.checked)
+          click: (item) => commands.setDarkMode(item.checked)
         },
         {
           label: 'Invert Page Colors',
           type: 'checkbox',
           checked: settings.invertColors,
-          click: (item) => toggleInvertColors(item.checked)
+          click: (item) => commands.setInvertColors(item.checked)
         }
       ]
     },
