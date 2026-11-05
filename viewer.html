@@ -90,6 +90,15 @@
       border-color: var(--toolbar-border);
     }
 
+    .toolbar-btn.active {
+      background-color: #3b82f6 !important;
+      border-color: #2563eb !important;
+    }
+
+    .toolbar-btn.active img {
+      filter: brightness(0) invert(1) !important;
+    }
+
     .toolbar-btn img {
       width: 16px;
       height: 16px;
@@ -510,6 +519,24 @@
       <button id="findToggle" class="toolbar-btn" title="Find (Ctrl+F)">
         <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-search.svg" alt="Find">
       </button>
+
+      <div class="separator"></div>
+
+      <!-- Annotation Mode Toolbar -->
+      <div id="annotationToolbar" style="display: flex; align-items: center; gap: 4px;">
+        <button id="modeHighlightBtn" class="toolbar-btn" title="Highlight">
+          <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-editorHighlight.svg" alt="Highlight">
+        </button>
+        <button id="modeFreeTextBtn" class="toolbar-btn" title="Text box">
+          <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-editorFreeText.svg" alt="Text box">
+        </button>
+        <button id="modeInkBtn" class="toolbar-btn" title="Draw">
+          <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-editorInk.svg" alt="Draw">
+        </button>
+        <button id="modeStampBtn" class="toolbar-btn" title="Image stamp">
+          <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-editorStamp.svg" alt="Image stamp">
+        </button>
+      </div>
     </div>
 
     <!-- Main View -->

@@ -145,9 +145,37 @@ async function requestSaveTab(tab) {
   });
 }
 
+async function requestCommitTab(tab) {
+  if (!tab || !tab.view || tab.view.webContents.isDestroyed()) {
+    return;
+  }
+  return new Promise((resolve) => {
+    let handled = false;
+    const timeout = setTimeout(() => {
+      if (!handled) {
+        handled = true;
+        resolve();
+      }
+    }, 1000);
+
+    const replyChannel = `tab-commit-done-${tab.id}-${Date.now()}`;
+    ipcMain.once(replyChannel, () => {
+      if (!handled) {
+        handled = true;
+        clearTimeout(timeout);
+        resolve();
+      }
+    });
+
+    tab.view.webContents.send('request-commit-annotations', replyChannel);
+  });
+}
+
 async function closeTab(tabId) {
   const tab = tabs.find(t => t.id === tabId);
   if (!tab) return false;
+
+  await requestCommitTab(tab);
 
   if (tab.modified) {
     const choice = dialog.showMessageBoxSync(mainWindow, {
@@ -379,70 +407,6 @@ function setTabAnnotationMode(tabId, mode) {
   return false;
 }
 
-async function pickImageDialog() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return { canceled: true };
-  }
-
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Select Image Stamp',
-    properties: ['openFile'],
-    filters: [
-      { name: 'Images (*.png; *.jpg; *.jpeg)', extensions: ['png', 'jpg', 'jpeg'] }
-    ]
-  });
-
-  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-    return { canceled: true };
-  }
-
-  const selectedPath = result.filePaths[0];
-  const fileName = path.basename(selectedPath);
-
-  let stat;
-  try {
-    stat = fs.statSync(selectedPath);
-    if (!stat.isFile()) {
-      throw new Error('Not a regular file');
-    }
-  } catch (err) {
-    console.error(`Image stat error for "${selectedPath}":`, err);
-    dialog.showErrorBox(
-      'Cannot Read Image',
-      `Could not read "${fileName}".\n\nThe file was not found or is inaccessible.`
-    );
-    return { error: 'unreadable' };
-  }
-
-  const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB limit
-  if (stat.size > MAX_IMAGE_SIZE) {
-    dialog.showErrorBox(
-      'Image Too Large',
-      `"${fileName}" (${(stat.size / (1024 * 1024)).toFixed(2)} MB) exceeds the 10 MB limit for image stamps.`
-    );
-    return { error: 'too_large' };
-  }
-
-  try {
-    const bytes = fs.readFileSync(selectedPath);
-    const ext = path.extname(selectedPath).toLowerCase();
-    const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
-    return {
-      canceled: false,
-      bytes: new Uint8Array(bytes),
-      name: fileName,
-      mimeType
-    };
-  } catch (err) {
-    console.error(`Image read error for "${selectedPath}":`, err);
-    dialog.showErrorBox(
-      'Cannot Read Image',
-      `Failed to read image data from "${fileName}":\n${err.message}`
-    );
-    return { error: 'unreadable' };
-  }
-}
-
 // Initialize Command Layer
 commands.initCommands({
   openPDFPath,
@@ -568,13 +532,13 @@ function createWindow() {
         else switchNextTab();
       } else if (input.control && input.key.toLowerCase() === 'w') {
         event.preventDefault();
-        closeCurrentTab();
+        commands.closeTab();
       } else if (input.control && input.key.toLowerCase() === 'o') {
         event.preventDefault();
-        handleOpenFile();
+        commands.openFile();
       } else if (input.control && input.shift && input.key.toLowerCase() === 'd') {
         event.preventDefault();
-        toggleDarkMode();
+        commands.setDarkMode();
       }
     }
   });
@@ -606,12 +570,21 @@ function createWindow() {
 
   // Unsaved changes check on window close (Step 2)
   mainWindow.on('close', async (e) => {
-    const modifiedTabs = tabs.filter(t => t.modified);
-    if (modifiedTabs.length === 0) {
+    if (tabs.length === 0) {
       return;
     }
 
     e.preventDefault();
+
+    for (const tab of tabs) {
+      await requestCommitTab(tab);
+    }
+
+    const modifiedTabs = tabs.filter(t => t.modified);
+    if (modifiedTabs.length === 0) {
+      mainWindow.destroy();
+      return;
+    }
 
     for (const tab of [...modifiedTabs]) {
       switchTab(tab.id);
@@ -655,21 +628,29 @@ function createWindow() {
 
 // IPC Handlers
 ipcMain.on('tab-switch', (event, tabId) => {
-  switchTab(tabId);
+  commands.switchTab(tabId);
 });
 
 ipcMain.on('tab-close', (event, tabId) => {
-  closeTab(tabId);
+  commands.closeTab(tabId);
 });
 
 ipcMain.on('tab-open-dialog', () => {
-  handleOpenFile();
+  commands.openFile();
 });
 
 ipcMain.on('tab-request-close', (event) => {
   const senderTab = tabs.find(t => t.view && t.view.webContents === event.sender);
   if (senderTab) {
-    closeTab(senderTab.id);
+    commands.closeTab(senderTab.id);
+  }
+});
+
+ipcMain.on('tab-set-annotation-mode', (event, mode) => {
+  const senderTab = tabs.find(t => t.view && t.view.webContents === event.sender) ||
+                    tabs.find(t => t.id === activeTabId);
+  if (senderTab) {
+    commands.setAnnotationMode(senderTab.id, mode);
   }
 });
 
@@ -682,7 +663,7 @@ ipcMain.on('tab-set-modified', (event, isModified) => {
 });
 
 ipcMain.handle('dialog-open-file', async () => {
-  await handleOpenFile();
+  await commands.openFile();
 });
 
 ipcMain.handle('save-pdf-bytes', async (event, bytesArray) => {

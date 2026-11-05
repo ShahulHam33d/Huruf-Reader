@@ -39,8 +39,19 @@ contextBridge.exposeInMainWorld('viewerAPI', {
   onSetAnnotationMode: (callback) => {
     ipcRenderer.on('set-annotation-mode', (event, mode) => callback(mode));
   },
-  pickImageStamp: () => {
-    return ipcRenderer.invoke('dialog-pick-image');
+  onRequestCommit: (callback) => {
+    ipcRenderer.on('request-commit-annotations', async (event, replyChannel) => {
+      if (typeof callback === 'function') {
+        try {
+          await callback();
+        } catch (e) {
+          console.error('Error in commit-annotations callback:', e);
+        }
+      }
+      if (replyChannel) {
+        ipcRenderer.send(replyChannel);
+      }
+    });
   }
 });
 

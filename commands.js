@@ -13,6 +13,23 @@
 
 let ctx = null;
 
+// Supported annotation editor modes (NONE: 0 plus the four active modes)
+let supportedModes = new Set([0, 3, 9, 13, 15]);
+
+// Dynamically resolve against pdfjs-dist
+import('pdfjs-dist/legacy/build/pdf.mjs').then((pdfjsLib) => {
+  if (pdfjsLib && pdfjsLib.AnnotationEditorType) {
+    const types = pdfjsLib.AnnotationEditorType;
+    supportedModes = new Set([
+      types.NONE,
+      types.HIGHLIGHT,
+      types.FREETEXT,
+      types.INK,
+      types.STAMP
+    ]);
+  }
+}).catch(() => {});
+
 /**
  * Initialize commands module with application context callbacks.
  * @param {object} context
@@ -98,10 +115,12 @@ function setInvertColors(enabled) {
  */
 function setAnnotationMode(tabId, mode) {
   if (!ctx) return false;
+  if (typeof mode !== 'number' || !supportedModes.has(mode)) {
+    return false;
+  }
   const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
-  const targetMode = typeof mode === 'number' ? mode : 0;
   if (!targetId) return false;
-  return ctx.setTabAnnotationMode(targetId, targetMode);
+  return ctx.setTabAnnotationMode(targetId, mode);
 }
 
 module.exports = {

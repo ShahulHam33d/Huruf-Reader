@@ -30,6 +30,12 @@ const findHighlightAll = document.getElementById('findHighlightAll');
 const findMsg = document.getElementById('findMsg');
 const findClose = document.getElementById('findClose');
 
+// Annotation Toolbar Elements
+const modeHighlightBtn = document.getElementById('modeHighlightBtn');
+const modeFreeTextBtn = document.getElementById('modeFreeTextBtn');
+const modeInkBtn = document.getElementById('modeInkBtn');
+const modeStampBtn = document.getElementById('modeStampBtn');
+
 // Password Modal Elements
 const passwordOverlay = document.getElementById('passwordOverlay');
 const passwordInput = document.getElementById('passwordInput');
@@ -51,7 +57,7 @@ const pdfViewer = new pdfjsViewer.PDFViewer({
   linkService,
   findController,
   annotationMode: pdfjsLib.AnnotationMode.ENABLE_STORAGE,
-  annotationEditorMode: pdfjsLib.AnnotationEditorType.HIGHLIGHT,
+  annotationEditorMode: pdfjsLib.AnnotationEditorType.NONE,
   annotationEditorHighlightColors: DEFAULT_HIGHLIGHT_COLORS,
   enableScripting: false,
   imageResourcesPath: './node_modules/pdfjs-dist/web/images/'
@@ -60,6 +66,86 @@ linkService.setViewer(pdfViewer);
 
 let currentDoc = null;
 let currentUIManager = null;
+let currentAnnotationMode = pdfjsLib.AnnotationEditorType.NONE;
+
+function updateModeButtonsUI(mode) {
+  currentAnnotationMode = mode;
+  if (modeHighlightBtn) modeHighlightBtn.classList.toggle('active', mode === pdfjsLib.AnnotationEditorType.HIGHLIGHT);
+  if (modeFreeTextBtn) modeFreeTextBtn.classList.toggle('active', mode === pdfjsLib.AnnotationEditorType.FREETEXT);
+  if (modeInkBtn) modeInkBtn.classList.toggle('active', mode === pdfjsLib.AnnotationEditorType.INK);
+  if (modeStampBtn) modeStampBtn.classList.toggle('active', mode === pdfjsLib.AnnotationEditorType.STAMP);
+}
+
+function handleModeButtonClick(targetMode) {
+  const nextMode = (currentAnnotationMode === targetMode)
+    ? pdfjsLib.AnnotationEditorType.NONE
+    : targetMode;
+
+  if (window.viewerAPI && window.viewerAPI.setAnnotationMode) {
+    window.viewerAPI.setAnnotationMode(nextMode);
+  } else {
+    applyAnnotationMode(nextMode);
+  }
+}
+
+function applyAnnotationMode(mode) {
+  try {
+    pdfViewer.annotationEditorMode = { mode };
+    updateModeButtonsUI(mode);
+  } catch (err) {
+    console.error('Error applying annotationEditorMode:', err);
+  }
+}
+
+async function commitAnnotations() {
+  if (pdfViewer && pdfjsLib && pdfjsLib.AnnotationEditorType) {
+    try {
+      pdfViewer.annotationEditorMode = { mode: pdfjsLib.AnnotationEditorType.NONE };
+      updateModeButtonsUI(pdfjsLib.AnnotationEditorType.NONE);
+    } catch (err) {
+      console.error('Error leaving annotation editor mode:', err);
+    }
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        setTimeout(resolve, 0);
+      });
+    });
+  }
+}
+
+async function commitAndSaveDocument() {
+  if (!currentDoc) {
+    return null;
+  }
+  const prevMode = currentAnnotationMode;
+  try {
+    await commitAnnotations();
+    const bytes = await currentDoc.saveDocument();
+    return bytes;
+  } finally {
+    if (pdfViewer && pdfjsLib && pdfjsLib.AnnotationEditorType) {
+      try {
+        pdfViewer.annotationEditorMode = { mode: prevMode };
+        updateModeButtonsUI(prevMode);
+      } catch (err) {
+        console.error('Error restoring annotation mode after save:', err);
+        try {
+          pdfViewer.annotationEditorMode = { mode: pdfjsLib.AnnotationEditorType.NONE };
+        } catch (_) {}
+        updateModeButtonsUI(pdfjsLib.AnnotationEditorType.NONE);
+      }
+    }
+  }
+}
+
+if (modeHighlightBtn) modeHighlightBtn.addEventListener('click', () => handleModeButtonClick(pdfjsLib.AnnotationEditorType.HIGHLIGHT));
+if (modeFreeTextBtn) modeFreeTextBtn.addEventListener('click', () => handleModeButtonClick(pdfjsLib.AnnotationEditorType.FREETEXT));
+if (modeInkBtn) modeInkBtn.addEventListener('click', () => handleModeButtonClick(pdfjsLib.AnnotationEditorType.INK));
+if (modeStampBtn) modeStampBtn.addEventListener('click', () => handleModeButtonClick(pdfjsLib.AnnotationEditorType.STAMP));
+
+eventBus.on('annotationeditormodechanged', ({ mode }) => {
+  updateModeButtonsUI(mode);
+});
 
 // Expose PDFViewerApplication for compatibility
 window.PDFViewerApplication = {
@@ -72,7 +158,7 @@ window.PDFViewerApplication = {
 
   async saveDocument() {
     if (!this.pdfDocument) throw new Error('No PDF document loaded.');
-    return await this.pdfDocument.saveDocument();
+    return await commitAndSaveDocument();
   }
 };
 
@@ -86,7 +172,7 @@ eventBus.on('pagesinit', () => {
   numPages.textContent = pdfViewer.pagesCount;
   pageNumber.max = pdfViewer.pagesCount;
   try {
-    pdfViewer.annotationEditorMode = { mode: pdfjsLib.AnnotationEditorType.HIGHLIGHT };
+    pdfViewer.annotationEditorMode = { mode: currentAnnotationMode };
   } catch (e) {
     console.error('Error setting annotationEditorMode:', e);
   }
@@ -616,7 +702,8 @@ if (window.viewerAPI) {
       return;
     }
     try {
-      const bytes = await currentDoc.saveDocument();
+      const bytes = await commitAndSaveDocument();
+      if (!bytes) return;
       const res = await window.viewerAPI.savePDFBytes(bytes);
       if (res && res.success) {
         currentDoc.annotationStorage.resetModified();
@@ -630,4 +717,16 @@ if (window.viewerAPI) {
   window.viewerAPI.onThemeUpdated((theme) => {
     applyTheme(theme);
   });
+
+  if (window.viewerAPI.onSetAnnotationMode) {
+    window.viewerAPI.onSetAnnotationMode((mode) => {
+      applyAnnotationMode(mode);
+    });
+  }
+
+  if (window.viewerAPI.onRequestCommit) {
+    window.viewerAPI.onRequestCommit(async () => {
+      await commitAnnotations();
+    });
+  }
 }
