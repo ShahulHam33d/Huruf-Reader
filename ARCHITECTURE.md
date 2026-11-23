@@ -32,3 +32,23 @@
 
 ## Known PDF Quirks
 - **Leading Junk Bytes**: Files with junk bytes before `%PDF-` break xref resolution during Save As. Main trims initial bytes before `%PDF-` in memory for every file opened.
+
+## Command Layer (`commands.js`)
+- Centralized dispatch in the main process with typed parameters: `openFile`, `closeTab`, `switchTab`, `saveAs`, `setDarkMode`, `setInvertColors`, `setAnnotationMode`.
+- Context callbacks supplied by `main.js` via `initCommands(ctx)`. Menu items, shortcuts, and IPC calls route through this module.
+- Validates annotation editor modes against supported types (`NONE`, `HIGHLIGHT`, `FREETEXT`, `INK`, `STAMP`).
+
+## Annotation Tools & Editor Integration
+- Uses PDF.js built-in `AnnotationEditorType` (Highlight, FreeText, Ink, Stamp). Each tab tracks its own active mode.
+- **Tool Options (`AnnotationEditorParamsType`)**:
+  - Controls shown beside toolbar, visible only for the active mode.
+  - Highlight: color (`#ffff00` default).
+  - FreeText: color (`#000000` default) and size (12pt default).
+  - Ink: color (`#ff0000` default) and thickness (3 default).
+  - Synced bidirectionally via `switchannotationeditorparams` and `annotationeditorparamschanged`.
+- **Image Stamp**:
+  - Stamp button switches to stamp mode and opens native file dialog (`PNG` or `JPEG` only, capped at 10 MB with native error dialog).
+  - Bytes passed over IPC to tab, instantiated as an in-memory `File`, and placed via `AnnotationEditorParamsType.CREATE`. Never loads from URLs.
+- **Commit & Save Pipeline**:
+  - `commitAndSaveDocument` temporarily switches mode to `NONE` to flush active drawing sessions into `annotationStorage` before `saveDocument()` serializes, then restores previous mode.
+  - Close-tab and close-app checks invoke tab commit before evaluating `tab.modified` state so uncommitted drawings trigger the save prompt.

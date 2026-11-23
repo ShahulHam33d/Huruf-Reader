@@ -36,6 +36,16 @@ const modeFreeTextBtn = document.getElementById('modeFreeTextBtn');
 const modeInkBtn = document.getElementById('modeInkBtn');
 const modeStampBtn = document.getElementById('modeStampBtn');
 
+// Annotation Parameters Elements
+const paramsHighlight = document.getElementById('paramsHighlight');
+const paramHighlightColor = document.getElementById('paramHighlightColor');
+const paramsFreeText = document.getElementById('paramsFreeText');
+const paramFreeTextColor = document.getElementById('paramFreeTextColor');
+const paramFreeTextSize = document.getElementById('paramFreeTextSize');
+const paramsInk = document.getElementById('paramsInk');
+const paramInkColor = document.getElementById('paramInkColor');
+const paramInkThickness = document.getElementById('paramInkThickness');
+
 // Password Modal Elements
 const passwordOverlay = document.getElementById('passwordOverlay');
 const passwordInput = document.getElementById('passwordInput');
@@ -67,6 +77,7 @@ linkService.setViewer(pdfViewer);
 let currentDoc = null;
 let currentUIManager = null;
 let currentAnnotationMode = pdfjsLib.AnnotationEditorType.NONE;
+let shouldPromptStampPicker = false;
 
 function updateModeButtonsUI(mode) {
   currentAnnotationMode = mode;
@@ -74,12 +85,81 @@ function updateModeButtonsUI(mode) {
   if (modeFreeTextBtn) modeFreeTextBtn.classList.toggle('active', mode === pdfjsLib.AnnotationEditorType.FREETEXT);
   if (modeInkBtn) modeInkBtn.classList.toggle('active', mode === pdfjsLib.AnnotationEditorType.INK);
   if (modeStampBtn) modeStampBtn.classList.toggle('active', mode === pdfjsLib.AnnotationEditorType.STAMP);
+
+  // Tool options visibility (visible only for active mode)
+  if (paramsHighlight) paramsHighlight.classList.toggle('hidden', mode !== pdfjsLib.AnnotationEditorType.HIGHLIGHT);
+  if (paramsFreeText) paramsFreeText.classList.toggle('hidden', mode !== pdfjsLib.AnnotationEditorType.FREETEXT);
+  if (paramsInk) paramsInk.classList.toggle('hidden', mode !== pdfjsLib.AnnotationEditorType.INK);
+}
+
+function resetToNormalMode() {
+  if (window.viewerAPI && window.viewerAPI.setAnnotationMode) {
+    window.viewerAPI.setAnnotationMode(pdfjsLib.AnnotationEditorType.NONE);
+  }
+  applyAnnotationMode(pdfjsLib.AnnotationEditorType.NONE);
+}
+
+async function triggerStampImagePicker() {
+  if (!window.viewerAPI || !window.viewerAPI.pickImageStamp) {
+    resetToNormalMode();
+    return;
+  }
+  let success = false;
+  try {
+    const result = await window.viewerAPI.pickImageStamp();
+    if (!result || !result.bytes) {
+      return;
+    }
+
+    const file = new File([result.bytes], result.name, {
+      type: result.mimeType,
+      lastModified: Date.now()
+    });
+
+    let testBitmap = null;
+    try {
+      testBitmap = await createImageBitmap(file);
+    } catch (decodeErr) {
+      console.error('Failed to decode stamp image:', decodeErr);
+      if (window.viewerAPI.reportStampError) {
+        window.viewerAPI.reportStampError({
+          fileName: result.name,
+          error: decodeErr.message || String(decodeErr)
+        });
+      }
+      return;
+    } finally {
+      if (testBitmap) {
+        testBitmap.close();
+      }
+    }
+
+    eventBus.dispatch('switchannotationeditorparams', {
+      type: pdfjsLib.AnnotationEditorParamsType.CREATE,
+      value: { bitmapFile: file }
+    });
+    success = true;
+  } catch (err) {
+    console.error('Error in triggerStampImagePicker:', err);
+    if (window.viewerAPI.reportStampError) {
+      window.viewerAPI.reportStampError({
+        fileName: 'stamp',
+        error: err.message || String(err)
+      });
+    }
+  } finally {
+    if (!success) {
+      resetToNormalMode();
+    }
+  }
 }
 
 function handleModeButtonClick(targetMode) {
   const nextMode = (currentAnnotationMode === targetMode)
     ? pdfjsLib.AnnotationEditorType.NONE
     : targetMode;
+
+  shouldPromptStampPicker = (targetMode === pdfjsLib.AnnotationEditorType.STAMP && nextMode === pdfjsLib.AnnotationEditorType.STAMP);
 
   if (window.viewerAPI && window.viewerAPI.setAnnotationMode) {
     window.viewerAPI.setAnnotationMode(nextMode);
@@ -92,9 +172,105 @@ function applyAnnotationMode(mode) {
   try {
     pdfViewer.annotationEditorMode = { mode };
     updateModeButtonsUI(mode);
+    if (mode === pdfjsLib.AnnotationEditorType.STAMP && shouldPromptStampPicker) {
+      shouldPromptStampPicker = false;
+      triggerStampImagePicker();
+    }
   } catch (err) {
     console.error('Error applying annotationEditorMode:', err);
   }
+}
+
+function applyDefaultAnnotationParams() {
+  if (!pdfjsLib || !pdfjsLib.AnnotationEditorParamsType) return;
+  const P = pdfjsLib.AnnotationEditorParamsType;
+  if (paramHighlightColor) {
+    eventBus.dispatch('switchannotationeditorparams', { type: P.HIGHLIGHT_COLOR, value: paramHighlightColor.value });
+  }
+  if (paramFreeTextColor) {
+    eventBus.dispatch('switchannotationeditorparams', { type: P.FREETEXT_COLOR, value: paramFreeTextColor.value });
+  }
+  if (paramFreeTextSize) {
+    const val = Number(paramFreeTextSize.value);
+    if (!isNaN(val) && val > 0) {
+      eventBus.dispatch('switchannotationeditorparams', { type: P.FREETEXT_SIZE, value: val });
+    }
+  }
+  if (paramInkColor) {
+    eventBus.dispatch('switchannotationeditorparams', { type: P.INK_COLOR, value: paramInkColor.value });
+  }
+  if (paramInkThickness) {
+    const val = Number(paramInkThickness.value);
+    if (!isNaN(val) && val > 0) {
+      eventBus.dispatch('switchannotationeditorparams', { type: P.INK_THICKNESS, value: val });
+    }
+  }
+}
+
+function initAnnotationParamsUI() {
+  if (paramHighlightColor) {
+    paramHighlightColor.addEventListener('input', () => {
+      eventBus.dispatch('switchannotationeditorparams', {
+        type: pdfjsLib.AnnotationEditorParamsType.HIGHLIGHT_COLOR,
+        value: paramHighlightColor.value
+      });
+    });
+  }
+  if (paramFreeTextColor) {
+    paramFreeTextColor.addEventListener('input', () => {
+      eventBus.dispatch('switchannotationeditorparams', {
+        type: pdfjsLib.AnnotationEditorParamsType.FREETEXT_COLOR,
+        value: paramFreeTextColor.value
+      });
+    });
+  }
+  if (paramFreeTextSize) {
+    paramFreeTextSize.addEventListener('input', () => {
+      const val = Number(paramFreeTextSize.value);
+      if (!isNaN(val) && val > 0) {
+        eventBus.dispatch('switchannotationeditorparams', {
+          type: pdfjsLib.AnnotationEditorParamsType.FREETEXT_SIZE,
+          value: val
+        });
+      }
+    });
+  }
+  if (paramInkColor) {
+    paramInkColor.addEventListener('input', () => {
+      eventBus.dispatch('switchannotationeditorparams', {
+        type: pdfjsLib.AnnotationEditorParamsType.INK_COLOR,
+        value: paramInkColor.value
+      });
+    });
+  }
+  if (paramInkThickness) {
+    paramInkThickness.addEventListener('input', () => {
+      const val = Number(paramInkThickness.value);
+      if (!isNaN(val) && val > 0) {
+        eventBus.dispatch('switchannotationeditorparams', {
+          type: pdfjsLib.AnnotationEditorParamsType.INK_THICKNESS,
+          value: val
+        });
+      }
+    });
+  }
+
+  eventBus.on('annotationeditorparamschanged', ({ details }) => {
+    if (!details || !Array.isArray(details)) return;
+    for (const [type, value] of details) {
+      if (type === pdfjsLib.AnnotationEditorParamsType.HIGHLIGHT_COLOR && paramHighlightColor) {
+        paramHighlightColor.value = value;
+      } else if (type === pdfjsLib.AnnotationEditorParamsType.FREETEXT_COLOR && paramFreeTextColor) {
+        paramFreeTextColor.value = value;
+      } else if (type === pdfjsLib.AnnotationEditorParamsType.FREETEXT_SIZE && paramFreeTextSize) {
+        paramFreeTextSize.value = value;
+      } else if (type === pdfjsLib.AnnotationEditorParamsType.INK_COLOR && paramInkColor) {
+        paramInkColor.value = value;
+      } else if (type === pdfjsLib.AnnotationEditorParamsType.INK_THICKNESS && paramInkThickness) {
+        paramInkThickness.value = value;
+      }
+    }
+  });
 }
 
 async function commitAnnotations() {
@@ -167,12 +343,15 @@ eventBus.on('annotationeditoruimanager', ({ uiManager }) => {
   window.PDFViewerApplication.uiManager = uiManager;
 });
 
+initAnnotationParamsUI();
+
 eventBus.on('pagesinit', () => {
   pdfViewer.currentScaleValue = 'page-width';
   numPages.textContent = pdfViewer.pagesCount;
   pageNumber.max = pdfViewer.pagesCount;
   try {
     pdfViewer.annotationEditorMode = { mode: currentAnnotationMode };
+    applyDefaultAnnotationParams();
   } catch (e) {
     console.error('Error setting annotationEditorMode:', e);
   }

@@ -740,6 +740,111 @@ ipcMain.handle('save-pdf-bytes', async (event, bytesArray) => {
   }
 });
 
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+async function pickImageStampDialog() {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+
+  let result;
+  try {
+    result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Image Stamp',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Images (*.png, *.jpg, *.jpeg)', extensions: ['png', 'jpg', 'jpeg'] }
+      ]
+    });
+  } catch (err) {
+    console.error('Error showing open image dialog:', err);
+    return null;
+  }
+
+  if (!result || result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return null;
+  }
+
+  const selectedPath = result.filePaths[0];
+  const fileName = path.basename(selectedPath);
+
+  try {
+    const stat = fs.statSync(selectedPath);
+    if (!stat.isFile()) {
+      throw new Error('Target is not a regular file');
+    }
+    if (stat.size > MAX_IMAGE_SIZE_BYTES) {
+      dialog.showErrorBox(
+        'Image Exceeds Size Limit',
+        `The file "${fileName}" exceeds the 10 MB size limit (size: ${(stat.size / (1024 * 1024)).toFixed(2)} MB).`
+      );
+      return null;
+    }
+
+    const ext = path.extname(selectedPath).toLowerCase();
+    if (!['.png', '.jpg', '.jpeg'].includes(ext)) {
+      dialog.showErrorBox(
+        'Invalid Image Format',
+        `The file "${fileName}" is not a supported format. Please select a PNG or JPEG image.`
+      );
+      return null;
+    }
+
+    const bytes = fs.readFileSync(selectedPath);
+
+    // Validate magic bytes: PNG must start with 89 50 4E 47 0D 0A 1A 0A, JPEG must start with FF D8 FF
+    const isPng = bytes.length >= 8 &&
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a;
+
+    const isJpeg = bytes.length >= 3 &&
+      bytes[0] === 0xff &&
+      bytes[1] === 0xd8 &&
+      bytes[2] === 0xff;
+
+    if (!isPng && !isJpeg) {
+      dialog.showErrorBox(
+        'Invalid Image',
+        `${fileName}\n\nThis file is not a valid PNG or JPEG image.`
+      );
+      return null;
+    }
+
+    const mimeType = isPng ? 'image/png' : 'image/jpeg';
+
+    return {
+      name: fileName,
+      mimeType,
+      bytes
+    };
+  } catch (err) {
+    console.error(`Error reading image "${selectedPath}":`, err);
+    dialog.showErrorBox(
+      'Cannot Read Image',
+      `Could not read image "${fileName}".\n\n${err.message || String(err)}`
+    );
+    return null;
+  }
+}
+
+ipcMain.handle('pick-image-stamp', async () => {
+  return await pickImageStampDialog();
+});
+
+ipcMain.on('report-stamp-error', (event, data) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const fileName = data && data.fileName ? data.fileName : 'Image';
+  console.error(`Stamp error reported for "${fileName}":`, data && data.error);
+  dialog.showErrorBox(
+    'Invalid Image',
+    `${fileName}\n\nThis file is not a valid PNG or JPEG image.`
+  );
+});
+
 app.whenReady().then(() => {
   createWindow();
 

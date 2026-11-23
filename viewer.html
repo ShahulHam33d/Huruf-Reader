@@ -99,6 +99,30 @@
       filter: brightness(0) invert(1) !important;
     }
 
+    .params-group.hidden {
+      display: none !important;
+    }
+
+    .tool-option-color {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: 1px solid var(--toolbar-border);
+      border-radius: 4px;
+      background: none;
+      cursor: pointer;
+    }
+
+    .tool-option-number {
+      height: 24px;
+      border: 1px solid var(--toolbar-border);
+      border-radius: 4px;
+      background: var(--toolbar-bg);
+      color: var(--text-color);
+      font-size: 12px;
+      text-align: center;
+    }
+
     .toolbar-btn img {
       width: 16px;
       height: 16px;
@@ -536,6 +560,24 @@
         <button id="modeStampBtn" class="toolbar-btn" title="Image stamp">
           <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-editorStamp.svg" alt="Image stamp">
         </button>
+
+        <!-- Tool Options (visible only for active mode) -->
+        <div id="annotationParams" style="display: flex; align-items: center; gap: 6px; margin-left: 6px;">
+          <!-- Highlight Options -->
+          <div id="paramsHighlight" class="params-group hidden" style="display: flex; align-items: center; gap: 4px;">
+            <input type="color" id="paramHighlightColor" value="#ffff00" title="Highlight color" class="tool-option-color">
+          </div>
+          <!-- FreeText Options -->
+          <div id="paramsFreeText" class="params-group hidden" style="display: flex; align-items: center; gap: 4px;">
+            <input type="color" id="paramFreeTextColor" value="#000000" title="Text color" class="tool-option-color">
+            <input type="number" id="paramFreeTextSize" value="12" min="6" max="72" step="1" title="Text size" class="tool-option-number" style="width: 48px;">
+          </div>
+          <!-- Ink Options -->
+          <div id="paramsInk" class="params-group hidden" style="display: flex; align-items: center; gap: 4px;">
+            <input type="color" id="paramInkColor" value="#ff0000" title="Ink color" class="tool-option-color">
+            <input type="number" id="paramInkThickness" value="3" min="1" max="20" step="1" title="Stroke thickness" class="tool-option-number" style="width: 44px;">
+          </div>
+        </div>
       </div>
     </div>
 

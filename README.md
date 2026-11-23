@@ -59,3 +59,16 @@ node verify.js test-pdfs/Dream_Textbook.pdf
 - [ ] **Corrupted / Invalid File**: Attempt to open a text or corrupted file. Confirm native error dialog appears with file name and plain-language message, console logs error, and no tab opens.
 - [ ] **Password-Protected File**: Open a password-protected PDF. Confirm the viewer's password modal displays. Enter invalid password to view retry error. Click Cancel to confirm the tab closes cleanly.
 - [ ] **Missing / Permission File**: Attempt to open a deleted or locked file. Confirm native error dialog appears without blank screen or crash.
+
+### 6. Annotation Tools (Phase 2A)
+- [ ] **Mode Switching**: Click Highlight, Text box, Draw, and Stamp buttons on the toolbar. Confirm the active button highlights and the tab enters that mode. Click the active button again to return to normal mode.
+- [ ] **Tool Options**: Verify option controls appear beside the toolbar only for the active mode:
+  - Highlight: color picker (default yellow).
+  - Text box: color picker (default black) and font size (default 12).
+  - Draw: color picker (default red) and stroke thickness (default 3).
+- [ ] **Highlighting**: Enter Highlight mode, select text, and verify text is highlighted in the selected color.
+- [ ] **FreeText Box**: Enter Text box mode, click on page, type text. Verify font size and color controls affect new and selected text boxes.
+- [ ] **Freehand Draw (Ink)**: Enter Draw mode, sketch freehand strokes in chosen color and thickness.
+- [ ] **Image Stamp**: Click Image stamp button. Confirm native file dialog opens for PNG/JPEG. Select image under 10 MB and verify it is placed as a stamp on the page. Confirm files >10 MB or unreadable files trigger a native error dialog and are rejected.
+- [ ] **Select, Move & Delete**: Select a placed annotation (Text, Ink, Stamp). Drag to move. Press `Delete` key and confirm annotation is deleted.
+- [ ] **Unsaved Changes & Persistence**: Confirm adding any of the four annotation types displays the unsaved dot indicator. Save As to a new file, reopen, and confirm all annotations persist and verify cleanly.

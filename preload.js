@@ -52,6 +52,12 @@ contextBridge.exposeInMainWorld('viewerAPI', {
         ipcRenderer.send(replyChannel);
       }
     });
+  },
+  pickImageStamp: () => {
+    return ipcRenderer.invoke('pick-image-stamp');
+  },
+  reportStampError: (data) => {
+    ipcRenderer.send('report-stamp-error', data);
   }
 });
 
