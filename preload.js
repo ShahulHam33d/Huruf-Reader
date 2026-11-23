@@ -58,6 +58,18 @@ contextBridge.exposeInMainWorld('viewerAPI', {
   },
   reportStampError: (data) => {
     ipcRenderer.send('report-stamp-error', data);
+  },
+  undo: () => {
+    ipcRenderer.send('tab-undo');
+  },
+  redo: () => {
+    ipcRenderer.send('tab-redo');
+  },
+  onUndo: (callback) => {
+    ipcRenderer.on('tab-do-undo', () => callback());
+  },
+  onRedo: (callback) => {
+    ipcRenderer.on('tab-do-redo', () => callback());
   }
 });
 

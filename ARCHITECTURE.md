@@ -34,7 +34,7 @@
 - **Leading Junk Bytes**: Files with junk bytes before `%PDF-` break xref resolution during Save As. Main trims initial bytes before `%PDF-` in memory for every file opened.
 
 ## Command Layer (`commands.js`)
-- Centralized dispatch in the main process with typed parameters: `openFile`, `closeTab`, `switchTab`, `saveAs`, `setDarkMode`, `setInvertColors`, `setAnnotationMode`.
+- Centralized dispatch in the main process with typed parameters: `openFile`, `closeTab`, `switchTab`, `saveAs`, `setDarkMode`, `setInvertColors`, `setAnnotationMode`, `undo`, `redo`.
 - Context callbacks supplied by `main.js` via `initCommands(ctx)`. Menu items, shortcuts, and IPC calls route through this module.
 - Validates annotation editor modes against supported types (`NONE`, `HIGHLIGHT`, `FREETEXT`, `INK`, `STAMP`).
 
@@ -52,3 +52,9 @@
 - **Commit & Save Pipeline**:
   - `commitAndSaveDocument` temporarily switches mode to `NONE` to flush active drawing sessions into `annotationStorage` before `saveDocument()` serializes, then restores previous mode.
   - Close-tab and close-app checks invoke tab commit before evaluating `tab.modified` state so uncommitted drawings trigger the save prompt.
+
+## Undo / Redo Architecture
+- **PDF.js Editor Integration**: Reuses `AnnotationEditorUIManager.undo()` and `redo()`. Each tab's viewer instance maintains its own isolated command history stack.
+- **Button State Tracking**: `editingstateschanged` event on `eventBus` provides `details.hasSomethingToUndo` and `details.hasSomethingToRedo`, keeping toolbar Undo/Redo buttons accurately enabled or disabled without polling.
+- **Single Command Path**: Toolbar buttons, shortcuts (`Ctrl+Z`, `Ctrl+Y`, `Ctrl+Shift+Z`), and application menu items (`Edit > Undo`, `Edit > Redo`) route through `commands.undo(tabId)` / `commands.redo(tabId)` over IPC.
+- **Text-Field Undo Safety**: Focused inputs (find bar, page number input) and editable FreeText boxes bypass annotation undo to preserve native browser text editing undo.

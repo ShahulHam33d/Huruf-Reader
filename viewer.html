@@ -99,6 +99,18 @@
       filter: brightness(0) invert(1) !important;
     }
 
+    .toolbar-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .toolbar-btn svg {
+      width: 16px;
+      height: 16px;
+      pointer-events: none;
+    }
+
     .params-group.hidden {
       display: none !important;
     }
@@ -548,6 +560,19 @@
 
       <!-- Annotation Mode Toolbar -->
       <div id="annotationToolbar" style="display: flex; align-items: center; gap: 4px;">
+        <button id="undoBtn" class="toolbar-btn" title="Undo (Ctrl+Z)" disabled>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h6a4 4 0 1 1 0 8H4"/>
+            <polyline points="6 3 3 6 6 9"/>
+          </svg>
+        </button>
+        <button id="redoBtn" class="toolbar-btn" title="Redo (Ctrl+Y)" disabled>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 6H7a4 4 0 1 0 0 8h5"/>
+            <polyline points="10 3 13 6 10 9"/>
+          </svg>
+        </button>
+        <div class="separator"></div>
         <button id="modeHighlightBtn" class="toolbar-btn" title="Highlight">
           <img src="./node_modules/pdfjs-dist/web/images/toolbarButton-editorHighlight.svg" alt="Highlight">
         </button>

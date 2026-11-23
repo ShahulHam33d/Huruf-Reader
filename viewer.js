@@ -31,6 +31,8 @@ const findMsg = document.getElementById('findMsg');
 const findClose = document.getElementById('findClose');
 
 // Annotation Toolbar Elements
+const undoBtn = document.getElementById('undoBtn');
+const redoBtn = document.getElementById('redoBtn');
 const modeHighlightBtn = document.getElementById('modeHighlightBtn');
 const modeFreeTextBtn = document.getElementById('modeFreeTextBtn');
 const modeInkBtn = document.getElementById('modeInkBtn');
@@ -314,6 +316,26 @@ async function commitAndSaveDocument() {
   }
 }
 
+if (undoBtn) {
+  undoBtn.addEventListener('click', () => {
+    if (window.viewerAPI && window.viewerAPI.undo) {
+      window.viewerAPI.undo();
+    } else if (currentUIManager) {
+      currentUIManager.undo();
+    }
+  });
+}
+
+if (redoBtn) {
+  redoBtn.addEventListener('click', () => {
+    if (window.viewerAPI && window.viewerAPI.redo) {
+      window.viewerAPI.redo();
+    } else if (currentUIManager) {
+      currentUIManager.redo();
+    }
+  });
+}
+
 if (modeHighlightBtn) modeHighlightBtn.addEventListener('click', () => handleModeButtonClick(pdfjsLib.AnnotationEditorType.HIGHLIGHT));
 if (modeFreeTextBtn) modeFreeTextBtn.addEventListener('click', () => handleModeButtonClick(pdfjsLib.AnnotationEditorType.FREETEXT));
 if (modeInkBtn) modeInkBtn.addEventListener('click', () => handleModeButtonClick(pdfjsLib.AnnotationEditorType.INK));
@@ -321,6 +343,49 @@ if (modeStampBtn) modeStampBtn.addEventListener('click', () => handleModeButtonC
 
 eventBus.on('annotationeditormodechanged', ({ mode }) => {
   updateModeButtonsUI(mode);
+});
+
+eventBus.on('editingstateschanged', ({ details }) => {
+  if (!details) return;
+  if (typeof details.hasSomethingToUndo === 'boolean' && undoBtn) {
+    undoBtn.disabled = !details.hasSomethingToUndo;
+  }
+  if (typeof details.hasSomethingToRedo === 'boolean' && redoBtn) {
+    redoBtn.disabled = !details.hasSomethingToRedo;
+  }
+});
+
+// Route keyboard shortcuts to commands when not typing in text input
+window.addEventListener('keydown', (e) => {
+  const isZ = e.key === 'z' || e.key === 'Z';
+  const isY = e.key === 'y' || e.key === 'Y';
+  if (!e.ctrlKey && !e.metaKey) return;
+
+  if (isZ || isY) {
+    const el = document.activeElement;
+    const isTextInput = (el instanceof HTMLInputElement && (el.type === 'text' || el.type === 'number')) ||
+                        el instanceof HTMLTextAreaElement ||
+                        el?.isContentEditable;
+    if (isTextInput) {
+      // Normal text-field undo/redo inside input or editable text box
+      return;
+    }
+
+    e.preventDefault();
+    if (isY || (isZ && e.shiftKey)) {
+      if (window.viewerAPI && window.viewerAPI.redo) {
+        window.viewerAPI.redo();
+      } else if (currentUIManager) {
+        currentUIManager.redo();
+      }
+    } else if (isZ) {
+      if (window.viewerAPI && window.viewerAPI.undo) {
+        window.viewerAPI.undo();
+      } else if (currentUIManager) {
+        currentUIManager.undo();
+      }
+    }
+  }
 });
 
 // Expose PDFViewerApplication for compatibility
@@ -906,6 +971,38 @@ if (window.viewerAPI) {
   if (window.viewerAPI.onRequestCommit) {
     window.viewerAPI.onRequestCommit(async () => {
       await commitAnnotations();
+    });
+  }
+
+  if (window.viewerAPI.onUndo) {
+    window.viewerAPI.onUndo(() => {
+      const el = document.activeElement;
+      const isTextInput = (el instanceof HTMLInputElement && (el.type === 'text' || el.type === 'number')) ||
+                          el instanceof HTMLTextAreaElement ||
+                          el?.isContentEditable;
+      if (isTextInput) {
+        document.execCommand('undo');
+        return;
+      }
+      if (currentUIManager) {
+        currentUIManager.undo();
+      }
+    });
+  }
+
+  if (window.viewerAPI.onRedo) {
+    window.viewerAPI.onRedo(() => {
+      const el = document.activeElement;
+      const isTextInput = (el instanceof HTMLInputElement && (el.type === 'text' || el.type === 'number')) ||
+                          el instanceof HTMLTextAreaElement ||
+                          el?.isContentEditable;
+      if (isTextInput) {
+        document.execCommand('redo');
+        return;
+      }
+      if (currentUIManager) {
+        currentUIManager.redo();
+      }
     });
   }
 }

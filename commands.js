@@ -123,6 +123,30 @@ function setAnnotationMode(tabId, mode) {
   return ctx.setTabAnnotationMode(targetId, mode);
 }
 
+/**
+ * Undo last annotation action in a tab.
+ * @param {string} [tabId]
+ * @returns {boolean}
+ */
+function undo(tabId) {
+  if (!ctx || !ctx.undo) return false;
+  const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
+  if (!targetId) return false;
+  return ctx.undo(targetId);
+}
+
+/**
+ * Redo last undone annotation action in a tab.
+ * @param {string} [tabId]
+ * @returns {boolean}
+ */
+function redo(tabId) {
+  if (!ctx || !ctx.redo) return false;
+  const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
+  if (!targetId) return false;
+  return ctx.redo(targetId);
+}
+
 module.exports = {
   initCommands,
   openFile,
@@ -131,6 +155,8 @@ module.exports = {
   saveAs,
   setDarkMode,
   setInvertColors,
-  setAnnotationMode
+  setAnnotationMode,
+  undo,
+  redo
 };
 

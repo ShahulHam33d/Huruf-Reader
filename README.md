@@ -72,3 +72,12 @@ node verify.js test-pdfs/Dream_Textbook.pdf
 - [ ] **Image Stamp**: Click Image stamp button. Confirm native file dialog opens for PNG/JPEG. Select image under 10 MB and verify it is placed as a stamp on the page. Confirm files >10 MB or unreadable files trigger a native error dialog and are rejected.
 - [ ] **Select, Move & Delete**: Select a placed annotation (Text, Ink, Stamp). Drag to move. Press `Delete` key and confirm annotation is deleted.
 - [ ] **Unsaved Changes & Persistence**: Confirm adding any of the four annotation types displays the unsaved dot indicator. Save As to a new file, reopen, and confirm all annotations persist and verify cleanly.
+
+### 7. Undo / Redo (Phase 2B-1)
+- [ ] **Initial State**: On opening a PDF or new tab, verify Undo and Redo toolbar buttons are both disabled.
+- [ ] **Undo Placement**: Add an annotation (Highlight, FreeText, Draw, or Stamp). Confirm the Undo button enables and Redo remains disabled.
+- [ ] **Execute Undo**: Click the Undo button (or press `Ctrl+Z`, or select `Edit > Undo`). Confirm the annotation is removed, Redo enables, and if no prior actions exist, Undo disables.
+- [ ] **Execute Redo**: Click the Redo button (or press `Ctrl+Y` / `Ctrl+Shift+Z`, or select `Edit > Redo`). Confirm the undone annotation reappears, Undo enables, and Redo disables.
+- [ ] **Multiple Steps**: Add multiple strokes or annotations. Verify repeatedly undoing walks backward through each step and redoing walks forward.
+- [ ] **Safety in Text Inputs**: Open the find bar (`Ctrl+F`), type text, and press `Ctrl+Z`. Confirm only typed text inside the input is undone without triggering annotation undo. Verify the same in the page-number input and while editing text inside a FreeText box.
+- [ ] **Tab Isolation**: Open two tabs. Add an annotation in Tab 1 and another in Tab 2. Confirm undoing in Tab 2 only affects Tab 2 without altering Tab 1's state.

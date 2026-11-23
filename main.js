@@ -407,6 +407,28 @@ function setTabAnnotationMode(tabId, mode) {
   return false;
 }
 
+function undoTab(tabId) {
+  const targetId = tabId || activeTabId;
+  if (!targetId) return false;
+  const currentTab = tabs.find(t => t.id === targetId);
+  if (currentTab && currentTab.view && !currentTab.view.webContents.isDestroyed()) {
+    currentTab.view.webContents.send('tab-do-undo');
+    return true;
+  }
+  return false;
+}
+
+function redoTab(tabId) {
+  const targetId = tabId || activeTabId;
+  if (!targetId) return false;
+  const currentTab = tabs.find(t => t.id === targetId);
+  if (currentTab && currentTab.view && !currentTab.view.webContents.isDestroyed()) {
+    currentTab.view.webContents.send('tab-do-redo');
+    return true;
+  }
+  return false;
+}
+
 // Initialize Command Layer
 commands.initCommands({
   openPDFPath,
@@ -417,6 +439,8 @@ commands.initCommands({
   toggleDarkMode,
   toggleInvertColors,
   setTabAnnotationMode,
+  undo: undoTab,
+  redo: redoTab,
   getActiveTabId: () => activeTabId
 });
 
@@ -461,6 +485,21 @@ function updateMenu() {
           label: 'Exit',
           accelerator: 'Alt+F4',
           click: () => app.quit()
+        }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        {
+          label: 'Undo',
+          accelerator: 'Ctrl+Z',
+          click: () => commands.undo()
+        },
+        {
+          label: 'Redo',
+          accelerator: 'Ctrl+Y',
+          click: () => commands.redo()
         }
       ]
     },
@@ -652,6 +691,20 @@ ipcMain.on('tab-set-annotation-mode', (event, mode) => {
   if (senderTab) {
     commands.setAnnotationMode(senderTab.id, mode);
   }
+});
+
+ipcMain.on('tab-undo', (event, tabId) => {
+  const senderTab = tabs.find(t => t.view && t.view.webContents === event.sender) ||
+                    tabs.find(t => t.id === activeTabId);
+  const targetId = tabId || (senderTab ? senderTab.id : activeTabId);
+  commands.undo(targetId);
+});
+
+ipcMain.on('tab-redo', (event, tabId) => {
+  const senderTab = tabs.find(t => t.view && t.view.webContents === event.sender) ||
+                    tabs.find(t => t.id === activeTabId);
+  const targetId = tabId || (senderTab ? senderTab.id : activeTabId);
+  commands.redo(targetId);
 });
 
 ipcMain.on('tab-set-modified', (event, isModified) => {
