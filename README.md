@@ -81,3 +81,19 @@ node verify.js test-pdfs/Dream_Textbook.pdf
 - [ ] **Multiple Steps**: Add multiple strokes or annotations. Verify repeatedly undoing walks backward through each step and redoing walks forward.
 - [ ] **Safety in Text Inputs**: Open the find bar (`Ctrl+F`), type text, and press `Ctrl+Z`. Confirm only typed text inside the input is undone without triggering annotation undo. Verify the same in the page-number input and while editing text inside a FreeText box.
 - [ ] **Tab Isolation**: Open two tabs. Add an annotation in Tab 1 and another in Tab 2. Confirm undoing in Tab 2 only affects Tab 2 without altering Tab 1's state.
+
+### 8. Autosave & Crash Recovery (Phase 2B-2)
+- [ ] **Idle Autosave Trigger**: Open a PDF, add an annotation (dot indicator appears). Wait 5 seconds idle. Check `%APPDATA%/hurufreader/recovery/` and confirm `<id>.pdf` and `<id>.json` are created safely.
+- [ ] **Typing Suppression**: In a modified tab, focus inside a text box (e.g. FreeText box, find bar, or page input) and type continuously. Confirm autosave is postponed until 5 seconds after typing ceases.
+- [ ] **Save As Cleanup**: Perform `Save As` on the modified tab to a new file. Verify the corresponding recovery `.pdf` and `.json` in the recovery folder are immediately deleted.
+- [ ] **Clean Close & Discard Cleanup**: Open a PDF, modify it, then close the tab and choose `Discard`. Verify recovery files are deleted. Close an unmodified tab and verify no orphaned recovery files remain.
+- [ ] **Cancel Safety**: Modify a tab, attempt to close the tab or window, and click `Cancel`. Confirm recovery files in `%APPDATA%/hurufreader/recovery/` remain intact.
+- [ ] **Crash Simulation & Restore**: Open a PDF, add annotations, wait >= 5 seconds for autosave to write to disk. Simulate an unexpected crash by killing the process in PowerShell:
+  ```powershell
+  taskkill /F /IM electron.exe
+  ```
+  Restart HurufReader (`npm start`). Confirm native recovery prompt appears: `Restore unsaved documents? HurufReader closed unexpectedly.` with buttons `[Restore, Discard, Ask Me Later]`.
+- [ ] **Restore Flow**: Click `Restore`. Confirm the tab reopens titled `(recovered) <filename>`, displays the unsaved-changes dot, and contains all annotations intact. Verify Save As works and blocks overwriting the original file.
+- [ ] **Discard Flow**: Crash or leave recovery files, restart, click `Discard`. Confirm recovery files are deleted and app starts with an empty window.
+- [ ] **Ask Me Later Flow**: Restart with recovery files, click `Ask Me Later`. Confirm recovery files are preserved on disk and app starts with an empty window.
+- [ ] **Corrupted Recovery Resilience**: Corrupt a recovery `.pdf` file in the recovery folder. Restart and click `Restore`. Confirm a native error dialog appears, the corrupt file is skipped gracefully, and the app does not crash.

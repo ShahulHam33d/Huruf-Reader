@@ -59,6 +59,9 @@ contextBridge.exposeInMainWorld('viewerAPI', {
   reportStampError: (data) => {
     ipcRenderer.send('report-stamp-error', data);
   },
+  saveRecoveryBytes: (bytes) => {
+    return ipcRenderer.invoke('save-recovery-bytes', bytes);
+  },
   undo: () => {
     ipcRenderer.send('tab-undo');
   },

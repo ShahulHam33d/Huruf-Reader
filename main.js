@@ -14,6 +14,279 @@ let activeTabId = null;
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 let settings = loadSettings();
 
+// Recovery storage
+const recoveryDir = path.join(app.getPath('userData'), 'recovery');
+
+function safeWriteRecoveryFile(tab, bytes) {
+  if (!fs.existsSync(recoveryDir)) {
+    fs.mkdirSync(recoveryDir, { recursive: true });
+  }
+  if (!tab.recoveryId) {
+    tab.recoveryId = `rec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+  const baseName = tab.recoveryId;
+  const pdfPath = path.join(recoveryDir, `${baseName}.pdf`);
+  const tmpPdfPath = path.join(recoveryDir, `${baseName}.tmp.pdf`);
+  const jsonPath = path.join(recoveryDir, `${baseName}.json`);
+  const tmpJsonPath = path.join(recoveryDir, `${baseName}.tmp.json`);
+
+  const buffer = Buffer.from(bytes);
+  fs.writeFileSync(tmpPdfPath, buffer);
+  if (fs.existsSync(pdfPath)) {
+    try { fs.unlinkSync(pdfPath); } catch (_) {}
+  }
+  fs.renameSync(tmpPdfPath, pdfPath);
+
+  const cleanOriginalName = tab.fileName.startsWith('(recovered) ')
+    ? tab.fileName.slice(12)
+    : tab.fileName;
+
+  const meta = {
+    originalFilePath: tab.filePath || '',
+    originalFileName: cleanOriginalName,
+    timestamp: new Date().toISOString()
+  };
+
+  fs.writeFileSync(tmpJsonPath, JSON.stringify(meta, null, 2), 'utf8');
+  if (fs.existsSync(jsonPath)) {
+    try { fs.unlinkSync(jsonPath); } catch (_) {}
+  }
+  fs.renameSync(tmpJsonPath, jsonPath);
+}
+
+function deleteRecoveryPair(baseName) {
+  if (!baseName) return;
+  const files = [
+    path.join(recoveryDir, `${baseName}.pdf`),
+    path.join(recoveryDir, `${baseName}.json`),
+    path.join(recoveryDir, `${baseName}.tmp.pdf`),
+    path.join(recoveryDir, `${baseName}.tmp.json`)
+  ];
+  for (const f of files) {
+    try {
+      if (fs.existsSync(f)) {
+        fs.unlinkSync(f);
+      }
+    } catch (err) {
+      console.error(`Error deleting recovery file "${f}":`, err);
+    }
+  }
+}
+
+function cleanupTabRecovery(tab) {
+  if (!tab || !tab.recoveryId) return;
+  deleteRecoveryPair(tab.recoveryId);
+  tab.recoveryId = null;
+}
+
+function cleanupOldRecoveryFiles() {
+  if (!fs.existsSync(recoveryDir)) return;
+  const now = Date.now();
+  const maxAgeMs = 14 * 24 * 60 * 60 * 1000; // 14 days
+  try {
+    const files = fs.readdirSync(recoveryDir);
+    for (const file of files) {
+      const fullPath = path.join(recoveryDir, file);
+      try {
+        const stats = fs.statSync(fullPath);
+        if (now - stats.mtimeMs > maxAgeMs) {
+          fs.unlinkSync(fullPath);
+        }
+      } catch (_) {}
+    }
+  } catch (err) {
+    console.error('Error cleaning up old recovery files:', err);
+  }
+}
+
+async function openRecoveryFile(candidate) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const recoveryPdfPath = candidate.pdfPath;
+  const cleanOriginalName = candidate.meta.originalFileName || path.basename(candidate.meta.originalFilePath || recoveryPdfPath);
+  const fileName = `(recovered) ${cleanOriginalName}`;
+  const originalFilePath = candidate.meta.originalFilePath || recoveryPdfPath;
+
+  // 1. Read file buffer
+  let fileBuffer;
+  try {
+    const stat = fs.statSync(recoveryPdfPath);
+    if (!stat.isFile()) {
+      throw new Error('Target is not a regular file');
+    }
+    fileBuffer = fs.readFileSync(recoveryPdfPath);
+  } catch (err) {
+    console.error(`Technical error reading recovery file "${recoveryPdfPath}":`, err);
+    dialog.showErrorBox(
+      'Corrupted Recovery File',
+      `HurufReader cannot open recovered file "${fileName}".\n\nThe recovery file could not be read.`
+    );
+    return;
+  }
+
+  // 2. Junk byte trim
+  const headerIndex = fileBuffer.subarray(0, 1024).indexOf('%PDF-');
+  if (headerIndex > 0) {
+    fileBuffer = fileBuffer.subarray(headerIndex);
+  } else if (headerIndex === -1) {
+    console.error(`Corrupted recovery PDF: Missing %PDF- header in "${recoveryPdfPath}"`);
+    dialog.showErrorBox(
+      'Corrupted Recovery File',
+      `HurufReader cannot open recovered file "${fileName}".\n\nThe recovery file appears to be corrupted or is not a valid PDF document.`
+    );
+    return;
+  }
+
+  // 3. Validate with PDF.js probe
+  try {
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const probeTask = pdfjsLib.getDocument({
+      data: new Uint8Array(fileBuffer),
+      isEvalSupported: false
+    });
+    await probeTask.promise;
+  } catch (err) {
+    if (err.name !== 'PasswordException') {
+      console.error(`Technical error validating recovery PDF "${recoveryPdfPath}":`, err);
+      dialog.showErrorBox(
+        'Corrupted Recovery File',
+        `HurufReader cannot open recovered file "${fileName}".\n\nThe recovery file appears to be corrupted and cannot be read.`
+      );
+      return;
+    }
+  }
+
+  // 4. Create WebContentsView for the tab
+  const tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+
+  const tabView = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.js'),
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      navigateOnDragDrop: false
+    }
+  });
+
+  tabView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  tabView.webContents.on('will-navigate', (e) => e.preventDefault());
+
+  tabView.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown') {
+      if (input.control && input.key === 'Tab') {
+        event.preventDefault();
+        if (input.shift) switchPrevTab();
+        else switchNextTab();
+      } else if (input.control && input.key.toLowerCase() === 'w') {
+        event.preventDefault();
+        commands.closeTab();
+      } else if (input.control && input.key.toLowerCase() === 'o') {
+        event.preventDefault();
+        commands.openFile();
+      } else if (input.control && input.shift && input.key.toLowerCase() === 'd') {
+        event.preventDefault();
+        commands.setDarkMode();
+      } else if (input.control && input.shift && input.key.toLowerCase() === 's') {
+        event.preventDefault();
+        commands.saveAs();
+      }
+    }
+  });
+
+  const tabObj = {
+    id: tabId,
+    filePath: originalFilePath,
+    fileName,
+    view: tabView,
+    unsavedChanges: true,
+    modified: true, // Marked with unsaved-change dot
+    recoveryId: candidate.id,
+    annotationMode: 0
+  };
+
+  tabs.push(tabObj);
+
+  tabView.webContents.loadFile('viewer.html');
+
+  tabView.webContents.on('did-finish-load', () => {
+    tabView.webContents.send('load-document', {
+      tabId,
+      filePath: originalFilePath,
+      fileName,
+      buffer: fileBuffer,
+      theme: {
+        darkMode: settings.darkMode,
+        invertColors: settings.invertColors
+      },
+      hasUnsavedChanges: true
+    });
+  });
+
+  switchTab(tabId);
+}
+
+async function checkRecoveryOnStartup() {
+  cleanupOldRecoveryFiles();
+
+  if (!fs.existsSync(recoveryDir)) return;
+
+  let files = [];
+  try {
+    files = fs.readdirSync(recoveryDir);
+  } catch (err) {
+    console.error('Error reading recovery dir:', err);
+    return;
+  }
+
+  const jsonFiles = files.filter(f => f.endsWith('.json') && !f.endsWith('.tmp.json'));
+  const candidates = [];
+
+  for (const jf of jsonFiles) {
+    const id = path.basename(jf, '.json');
+    const pdfName = `${id}.pdf`;
+    if (files.includes(pdfName)) {
+      const jsonPath = path.join(recoveryDir, jf);
+      const pdfPath = path.join(recoveryDir, pdfName);
+      try {
+        const metaStr = fs.readFileSync(jsonPath, 'utf8');
+        const meta = JSON.parse(metaStr);
+        candidates.push({ id, pdfPath, jsonPath, meta });
+      } catch (err) {
+        console.error(`Invalid recovery metadata in ${jf}:`, err);
+      }
+    }
+  }
+
+  if (candidates.length === 0) return;
+
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: 'question',
+    buttons: ['Restore', 'Discard', 'Ask Me Later'],
+    defaultId: 0,
+    cancelId: 2,
+    title: 'HurufReader',
+    message: 'Restore unsaved documents? HurufReader closed unexpectedly.',
+    detail: `${candidates.length} unsaved document${candidates.length > 1 ? 's' : ''} found.`
+  });
+
+  if (choice === 0) {
+    // Restore
+    for (const c of candidates) {
+      await openRecoveryFile(c);
+    }
+  } else if (choice === 1) {
+    // Discard
+    for (const c of candidates) {
+      deleteRecoveryPair(c.id);
+    }
+  } else {
+    // Ask Me Later: keep files on disk
+  }
+}
+
 function loadSettings() {
   try {
     if (fs.existsSync(settingsPath)) {
@@ -82,7 +355,8 @@ function sendTabsState() {
     id: t.id,
     fileName: t.fileName,
     filePath: t.filePath,
-    modified: t.modified
+    modified: Boolean(t.unsavedChanges || t.modified),
+    unsavedChanges: Boolean(t.unsavedChanges || t.modified)
   }));
   mainWindow.webContents.send('tabs-updated', {
     tabs: summary,
@@ -177,7 +451,7 @@ async function closeTab(tabId) {
 
   await requestCommitTab(tab);
 
-  if (tab.modified) {
+  if (tab.unsavedChanges || tab.modified) {
     const choice = dialog.showMessageBoxSync(mainWindow, {
       type: 'question',
       buttons: ['Save As', 'Discard', 'Cancel'],
@@ -197,9 +471,18 @@ async function closeTab(tabId) {
       if (!saved) {
         return false; // User cancelled save dialog or save failed
       }
+      tab.unsavedChanges = false;
       tab.modified = false;
+      cleanupTabRecovery(tab);
+    } else if (choice === 1) {
+      // Discard
+      tab.unsavedChanges = false;
+      tab.modified = false;
+      console.log(`[modified] Flag cleared for tab "${tab.fileName}": user chose Discard`);
+      cleanupTabRecovery(tab);
     }
-    // choice === 1 is Discard, proceed
+  } else {
+    cleanupTabRecovery(tab);
   }
 
   // Remove tab view
@@ -340,6 +623,7 @@ async function openPDFPath(selectedPath) {
     filePath: selectedPath,
     fileName,
     view: tabView,
+    unsavedChanges: false,
     modified: false,
     annotationMode: 0
   };
@@ -357,7 +641,8 @@ async function openPDFPath(selectedPath) {
       theme: {
         darkMode: settings.darkMode,
         invertColors: settings.invertColors
-      }
+      },
+      hasUnsavedChanges: false
     });
   });
 
@@ -598,9 +883,10 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  mainWindow.webContents.on('did-finish-load', () => {
+  mainWindow.webContents.on('did-finish-load', async () => {
     broadcastTheme();
     sendTabsState();
+    await checkRecoveryOnStartup();
   });
 
   mainWindow.on('resize', updateActiveTabBounds);
@@ -619,8 +905,11 @@ function createWindow() {
       await requestCommitTab(tab);
     }
 
-    const modifiedTabs = tabs.filter(t => t.modified);
+    const modifiedTabs = tabs.filter(t => t.unsavedChanges || t.modified);
     if (modifiedTabs.length === 0) {
+      for (const tab of tabs) {
+        cleanupTabRecovery(tab);
+      }
       mainWindow.destroy();
       return;
     }
@@ -638,23 +927,31 @@ function createWindow() {
       });
 
       if (choice === 2) {
-        // Cancel close
+        // Cancel close - keep recovery files intact
         return;
       } else if (choice === 0) {
         // Save As
         const saved = await requestSaveTab(tab);
         if (!saved) {
-          // User cancelled save dialog
+          // User cancelled save dialog - keep recovery files intact
           return;
         }
+        tab.unsavedChanges = false;
         tab.modified = false;
+        cleanupTabRecovery(tab);
       } else if (choice === 1) {
         // Discard
+        tab.unsavedChanges = false;
         tab.modified = false;
+        console.log(`[modified] Flag cleared for tab "${tab.fileName}": user chose Discard on app close`);
+        cleanupTabRecovery(tab);
       }
     }
 
-    // All modified tabs resolved, destroy window
+    // All modified tabs resolved, clean up any remaining unmodified tabs
+    for (const tab of tabs) {
+      cleanupTabRecovery(tab);
+    }
     mainWindow.destroy();
   });
 
@@ -710,8 +1007,17 @@ ipcMain.on('tab-redo', (event, tabId) => {
 ipcMain.on('tab-set-modified', (event, isModified) => {
   const senderTab = tabs.find(t => t.view && t.view.webContents === event.sender);
   if (senderTab) {
-    senderTab.modified = Boolean(isModified);
-    sendTabsState();
+    const nextVal = Boolean(isModified);
+    if (senderTab.unsavedChanges !== nextVal) {
+      senderTab.unsavedChanges = nextVal;
+      senderTab.modified = nextVal;
+      if (nextVal) {
+        console.log(`[modified] Flag set for tab "${senderTab.fileName}": annotation change in viewer`);
+      } else {
+        console.log(`[modified] Flag cleared for tab "${senderTab.fileName}": reset from viewer`);
+      }
+      sendTabsState();
+    }
   }
 });
 
@@ -776,7 +1082,10 @@ ipcMain.handle('save-pdf-bytes', async (event, bytesArray) => {
     const buffer = Buffer.from(bytesArray);
     fs.writeFileSync(targetPath, buffer);
     if (senderTab) {
+      senderTab.unsavedChanges = false;
       senderTab.modified = false;
+      console.log(`[modified] Flag cleared for tab "${senderTab.fileName}": Save As completed successfully`);
+      cleanupTabRecovery(senderTab);
       if (senderTab._onSaveComplete) {
         senderTab._onSaveComplete(targetPath);
       }
@@ -789,6 +1098,21 @@ ipcMain.handle('save-pdf-bytes', async (event, bytesArray) => {
     if (senderTab && senderTab._onSaveComplete) {
       senderTab._onSaveComplete(null);
     }
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('save-recovery-bytes', async (event, bytesArray) => {
+  const senderTab = tabs.find(t => t.view && t.view.webContents === event.sender) ||
+                    tabs.find(t => t.id === activeTabId);
+  if (!senderTab || !bytesArray || bytesArray.length === 0) {
+    return { success: false, error: 'No tab or data' };
+  }
+  try {
+    safeWriteRecoveryFile(senderTab, bytesArray);
+    return { success: true };
+  } catch (err) {
+    console.error('Error saving recovery file:', err);
     return { success: false, error: err.message };
   }
 });

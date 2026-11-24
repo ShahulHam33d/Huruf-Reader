@@ -58,3 +58,10 @@
 - **Button State Tracking**: `editingstateschanged` event on `eventBus` provides `details.hasSomethingToUndo` and `details.hasSomethingToRedo`, keeping toolbar Undo/Redo buttons accurately enabled or disabled without polling.
 - **Single Command Path**: Toolbar buttons, shortcuts (`Ctrl+Z`, `Ctrl+Y`, `Ctrl+Shift+Z`), and application menu items (`Edit > Undo`, `Edit > Redo`) route through `commands.undo(tabId)` / `commands.redo(tabId)` over IPC.
 - **Text-Field Undo Safety**: Focused inputs (find bar, page number input) and editable FreeText boxes bypass annotation undo to preserve native browser text editing undo.
+
+## Autosave & Crash Recovery
+- **Storage**: Strictly writes to `%APPDATA%/hurufreader/recovery/`. Never writes to the user's original PDF or chosen file path.
+- **Trigger**: Every 30s max, only if unsaved changes exist and user is idle for >= 5s. Skips if typing inside text inputs.
+- **Safe Writes**: Atomic write to `<id>.tmp.pdf` / `<id>.tmp.json`, then renamed over `<id>.pdf` / `<id>.json`. JSON stores only `originalFilePath`, `originalFileName`, and `timestamp` (ISO string).
+- **Cleanup**: Recovery files deleted on successful Save As, on Discard (close tab / close app), and on clean close of unmodified tabs. Retained on Cancel. Startup purges files older than 14 days.
+- **Startup Restore**: Prompts user (`[Restore, Discard, Ask Me Later]`). Restored tabs open with `(recovered) <name>`, marked modified, and open through standard probe and junk-byte trim pipeline.

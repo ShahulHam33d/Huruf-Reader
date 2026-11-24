@@ -141,6 +141,8 @@ async function triggerStampImagePicker() {
       value: { bitmapFile: file }
     });
     success = true;
+    changedSinceLastRecoveryWrite = true;
+    setTabUnsavedChanges(true, 'image stamp created');
   } catch (err) {
     console.error('Error in triggerStampImagePicker:', err);
     if (window.viewerAPI.reportStampError) {
@@ -347,6 +349,10 @@ eventBus.on('annotationeditormodechanged', ({ mode }) => {
 
 eventBus.on('editingstateschanged', ({ details }) => {
   if (!details) return;
+  if (details.hasSomethingToUndo) {
+    changedSinceLastRecoveryWrite = true;
+    setTabUnsavedChanges(true, 'editingstateschanged (undo available)');
+  }
   if (typeof details.hasSomethingToUndo === 'boolean' && undoBtn) {
     undoBtn.disabled = !details.hasSomethingToUndo;
   }
@@ -832,21 +838,94 @@ function updateActiveThumbnail(activePage) {
   });
 }
 
-// Track Unsaved Changes
-function attachModifiedTracking(doc) {
-  if (doc && doc.annotationStorage) {
-    doc.annotationStorage.onSetModified = () => {
+// Track Unsaved Changes (Sticky flag)
+let tabHasUnsavedChanges = false;
+let changedSinceLastRecoveryWrite = false;
+
+function setTabUnsavedChanges(value, reason) {
+  const nextVal = Boolean(value);
+  if (tabHasUnsavedChanges !== nextVal) {
+    tabHasUnsavedChanges = nextVal;
+    if (nextVal) {
+      console.log(`[modified] Flag set: ${reason}`);
       if (window.viewerAPI) {
         window.viewerAPI.setModified(true);
       }
-    };
-    doc.annotationStorage.onResetModified = () => {
+    } else {
+      console.log(`[modified] Flag cleared: ${reason}`);
       if (window.viewerAPI) {
         window.viewerAPI.setModified(false);
       }
+    }
+  }
+}
+
+function attachModifiedTracking(doc) {
+  if (doc && doc.annotationStorage) {
+    doc.annotationStorage.onSetModified = () => {
+      changedSinceLastRecoveryWrite = true;
+      setTabUnsavedChanges(true, 'annotationStorage.onSetModified');
+    };
+    doc.annotationStorage.onResetModified = () => {
+      // Step 2: Ignore onResetModified and any reset caused by autosave, the commit helper, or leaving a mode.
     };
   }
 }
+
+// Autosave & Recovery Tracking
+let lastUserActivityTime = Date.now();
+let lastRecoverySaveTime = 0;
+let isRecoverySaveInProgress = false;
+
+function recordUserActivity() {
+  lastUserActivityTime = Date.now();
+}
+
+window.addEventListener('pointerdown', recordUserActivity, { passive: true });
+window.addEventListener('pointermove', recordUserActivity, { passive: true });
+window.addEventListener('keydown', recordUserActivity, { passive: true });
+window.addEventListener('wheel', recordUserActivity, { passive: true });
+
+function isUserTypingInTextBox() {
+  const el = document.activeElement;
+  if (!el) return false;
+  return (el instanceof HTMLInputElement && (el.type === 'text' || el.type === 'number' || el.type === 'search' || !el.type)) ||
+         el instanceof HTMLTextAreaElement ||
+         el.isContentEditable ||
+         Boolean(el.closest && el.closest('.freeTextEditor, .annotationEditor'));
+}
+
+setInterval(async () => {
+  if (!currentDoc || isRecoverySaveInProgress || !tabHasUnsavedChanges || !changedSinceLastRecoveryWrite) {
+    return;
+  }
+  const now = Date.now();
+  if (now - lastRecoverySaveTime < 30000) {
+    return;
+  }
+  if (now - lastUserActivityTime < 5000) {
+    return;
+  }
+  if (isUserTypingInTextBox()) {
+    return;
+  }
+
+  isRecoverySaveInProgress = true;
+  try {
+    const bytes = await commitAndSaveDocument();
+    if (bytes && window.viewerAPI && window.viewerAPI.saveRecoveryBytes) {
+      const res = await window.viewerAPI.saveRecoveryBytes(bytes);
+      if (res && res.success) {
+        changedSinceLastRecoveryWrite = false;
+        lastRecoverySaveTime = Date.now();
+      }
+    }
+  } catch (err) {
+    console.error('Autosave recovery error:', err);
+  } finally {
+    isRecoverySaveInProgress = false;
+  }
+}, 1000);
 
 // Load Document Function
 async function openDocument(bufferData) {
@@ -935,6 +1014,12 @@ if (window.viewerAPI) {
       if (payload.theme) {
         applyTheme(payload.theme);
       }
+      if (payload.hasUnsavedChanges) {
+        setTabUnsavedChanges(true, 'restored recovered document');
+      } else {
+        tabHasUnsavedChanges = false;
+        changedSinceLastRecoveryWrite = false;
+      }
       await openDocument(payload.buffer);
     } catch (err) {
       console.error('Error loading PDF in tab view:', err);
@@ -951,7 +1036,8 @@ if (window.viewerAPI) {
       const res = await window.viewerAPI.savePDFBytes(bytes);
       if (res && res.success) {
         currentDoc.annotationStorage.resetModified();
-        window.viewerAPI.setModified(false);
+        changedSinceLastRecoveryWrite = false;
+        setTabUnsavedChanges(false, 'Save As completed successfully');
       }
     } catch (err) {
       console.error('Error saving PDF in tab:', err);
@@ -985,6 +1071,8 @@ if (window.viewerAPI) {
         return;
       }
       if (currentUIManager) {
+        changedSinceLastRecoveryWrite = true;
+        setTabUnsavedChanges(true, 'undo action');
         currentUIManager.undo();
       }
     });
@@ -1001,6 +1089,8 @@ if (window.viewerAPI) {
         return;
       }
       if (currentUIManager) {
+        changedSinceLastRecoveryWrite = true;
+        setTabUnsavedChanges(true, 'redo action');
         currentUIManager.redo();
       }
     });
