@@ -418,8 +418,9 @@
       filter: invert(0.9) hue-rotate(180deg);
     }
 
-    /* Password Modal */
-    #passwordOverlay {
+    /* Password Modal & Page Ops Modal */
+    #passwordOverlay,
+    #pageOpsOverlay {
       position: fixed;
       top: 0;
       left: 0;
@@ -432,8 +433,33 @@
       z-index: 1000;
     }
 
-    #passwordOverlay.hidden {
+    #passwordOverlay.hidden,
+    #pageOpsOverlay.hidden,
+    .page-ops-group.hidden {
       display: none;
+    }
+
+    .page-ops-group {
+      margin-bottom: 10px;
+    }
+
+    .page-ops-group label {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+      color: var(--text-color);
+    }
+
+    .page-ops-select {
+      width: 100%;
+      height: 28px;
+      padding: 0 6px;
+      box-sizing: border-box;
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      background-color: var(--input-bg);
+      color: var(--text-color);
+      font-size: 13px;
     }
 
     .modal-box {
@@ -651,6 +677,47 @@
       <div class="modal-buttons">
         <button id="passwordCancelBtn" class="modal-btn">Cancel</button>
         <button id="passwordSubmitBtn" class="modal-btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Page Operations Modal -->
+  <div id="pageOpsOverlay" class="hidden">
+    <div class="modal-box">
+      <h3 id="pageOpsTitle">Page Operation</h3>
+      <p id="pageOpsSubtitle">Total pages: <span id="pageOpsTotal">0</span></p>
+
+      <div id="pageOpsSplitModeGroup" class="page-ops-group hidden">
+        <label for="pageOpsSplitMode">Split method:</label>
+        <select id="pageOpsSplitMode" class="page-ops-select">
+          <option value="every">Every N pages</option>
+          <option value="ranges">Page ranges (e.g. 1-3; 4-6)</option>
+        </select>
+      </div>
+
+      <div id="pageOpsSplitEveryGroup" class="page-ops-group hidden">
+        <label for="pageOpsSplitEvery">Pages per part:</label>
+        <input type="number" id="pageOpsSplitEvery" min="1" value="2">
+      </div>
+
+      <div id="pageOpsRangeGroup" class="page-ops-group">
+        <label for="pageOpsRangeInput" id="pageOpsRangeLabel">Pages (e.g. 1-3, 5, 8-10):</label>
+        <input type="text" id="pageOpsRangeInput" placeholder="e.g. 1-3, 5, 8-10" autocomplete="off">
+      </div>
+
+      <div id="pageOpsRotateGroup" class="page-ops-group hidden">
+        <label for="pageOpsRotateSelect">Rotation:</label>
+        <select id="pageOpsRotateSelect" class="page-ops-select">
+          <option value="90">90° Clockwise</option>
+          <option value="180">180°</option>
+          <option value="270">270° (90° Counter-Clockwise)</option>
+        </select>
+      </div>
+
+      <div id="pageOpsError" class="modal-error"></div>
+      <div class="modal-buttons">
+        <button id="pageOpsCancelBtn" class="modal-btn">Cancel</button>
+        <button id="pageOpsSubmitBtn" class="modal-btn primary">OK</button>
       </div>
     </div>
   </div>

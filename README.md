@@ -97,3 +97,13 @@ node verify.js test-pdfs/Dream_Textbook.pdf
 - [ ] **Discard Flow**: Crash or leave recovery files, restart, click `Discard`. Confirm recovery files are deleted and app starts with an empty window.
 - [ ] **Ask Me Later Flow**: Restart with recovery files, click `Ask Me Later`. Confirm recovery files are preserved on disk and app starts with an empty window.
 - [ ] **Corrupted Recovery Resilience**: Corrupt a recovery `.pdf` file in the recovery folder. Restart and click `Restore`. Confirm a native error dialog appears, the corrupt file is skipped gracefully, and the app does not crash.
+
+### 9. Page Operations (Phase 3A)
+- [ ] **Pages Menu & Modal**: Open a PDF and click `Pages > Extract Pages...`, `Delete Pages...`, `Rotate Pages...`, and `Split Document...`. Confirm each opens the modal showing the total page count, has `Cancel`, and closes on `Esc`.
+- [ ] **Inline Validation**: Enter an empty range, bad syntax (`1-abc`), out-of-range page (`999`), or all pages for Delete. Confirm inline error messages appear without closing the modal or opening a tab.
+- [ ] **Extract Pages**: Add an annotation to page 2, then run `Pages > Extract Pages...` with `2-3`. Confirm a new tab `(edited) <name>` opens with the unsaved dot, contains 2 pages including the annotation, and leaves the source tab and file on disk unchanged.
+- [ ] **Delete Pages**: Run `Pages > Delete Pages...` with `1`. Confirm a new `(edited) <name>` tab opens with 1 fewer page, marked unsaved.
+- [ ] **Rotate Pages**: Run `Pages > Rotate Pages...` on `1-2` by `90`. Confirm a new `(edited) <name>` tab opens with pages 1–2 rotated +90° relative to their prior rotation.
+- [ ] **Split Document**: Run `Pages > Split Document...` with "Every 2 pages" (and again with ranges). Choose a folder, confirm `<name>_part1.pdf`, etc. are written, re-running in the same folder appends `_1` instead of overwriting, and a completion dialog shows the file count.
+- [ ] **Save As & Autosave on Edited Tab**: Confirm `Save As` works on an `(edited)` tab (still blocking overwrite of the original file) and autosave/recovery protects it if modified.
+- [ ] **Encrypted / Damaged File Error**: Attempt a page operation on a password-protected or damaged PDF. Confirm a native error dialog appears with the file name and no tab opens.

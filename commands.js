@@ -147,6 +147,87 @@ function redo(tabId) {
   return ctx.redo(targetId);
 }
 
+/**
+ * Extract pages from a tab into a new edited tab.
+ * @param {string} [tabId]
+ * @param {string} rangeStr
+ * @returns {Promise<{success: boolean, validationError?: string, error?: string}>}
+ */
+async function extractPages(tabId, rangeStr) {
+  if (!ctx || !ctx.extractPages) return { success: false, error: 'Not initialized' };
+  const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
+  if (!targetId) return { success: false, error: 'No active tab' };
+  if (typeof rangeStr !== 'string' || rangeStr.trim().length === 0) {
+    return { success: false, validationError: 'Page selection cannot be empty.' };
+  }
+  return await ctx.extractPages(targetId, rangeStr.trim());
+}
+
+/**
+ * Delete pages from a tab into a new edited tab.
+ * @param {string} [tabId]
+ * @param {string} rangeStr
+ * @returns {Promise<{success: boolean, validationError?: string, error?: string}>}
+ */
+async function deletePages(tabId, rangeStr) {
+  if (!ctx || !ctx.deletePages) return { success: false, error: 'Not initialized' };
+  const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
+  if (!targetId) return { success: false, error: 'No active tab' };
+  if (typeof rangeStr !== 'string' || rangeStr.trim().length === 0) {
+    return { success: false, validationError: 'Page selection cannot be empty.' };
+  }
+  return await ctx.deletePages(targetId, rangeStr.trim());
+}
+
+/**
+ * Rotate pages in a tab into a new edited tab.
+ * @param {string} [tabId]
+ * @param {string} rangeStr
+ * @param {number} degrees
+ * @returns {Promise<{success: boolean, validationError?: string, error?: string}>}
+ */
+async function rotatePages(tabId, rangeStr, degrees) {
+  if (!ctx || !ctx.rotatePages) return { success: false, error: 'Not initialized' };
+  const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
+  if (!targetId) return { success: false, error: 'No active tab' };
+  if (typeof rangeStr !== 'string' || rangeStr.trim().length === 0) {
+    return { success: false, validationError: 'Page selection cannot be empty.' };
+  }
+  if (typeof degrees !== 'number' || !Number.isInteger(degrees) || ![90, 180, 270, -90].includes(degrees)) {
+    return { success: false, validationError: 'Rotation must be 90, 180, 270, or -90 degrees.' };
+  }
+  return await ctx.rotatePages(targetId, rangeStr.trim(), degrees);
+}
+
+/**
+ * Split a tab's PDF into separate files in a chosen folder.
+ * @param {string} [tabId]
+ * @param {object} spec
+ * @returns {Promise<{success: boolean, validationError?: string, error?: string, count?: number}>}
+ */
+async function splitPdf(tabId, spec) {
+  if (!ctx || !ctx.splitPdf) return { success: false, error: 'Not initialized' };
+  const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
+  if (!targetId) return { success: false, error: 'No active tab' };
+  if (!spec || typeof spec !== 'object') {
+    return { success: false, validationError: 'Split specification is required.' };
+  }
+  if (spec.mode === 'every') {
+    if (typeof spec.every !== 'number' || !Number.isInteger(spec.every) || spec.every < 1) {
+      return { success: false, validationError: 'Pages per part must be a positive integer (>= 1).' };
+    }
+  } else if (spec.mode === 'ranges') {
+    const validStr = typeof spec.ranges === 'string' && spec.ranges.trim().length > 0;
+    const validArr = Array.isArray(spec.ranges) && spec.ranges.length > 0;
+    if (!validStr && !validArr) {
+      return { success: false, validationError: 'Split ranges cannot be empty.' };
+    }
+  } else {
+    return { success: false, validationError: 'Invalid split mode.' };
+  }
+  return await ctx.splitPdf(targetId, spec);
+}
+
 module.exports = {
   initCommands,
   openFile,
@@ -157,6 +238,10 @@ module.exports = {
   setInvertColors,
   setAnnotationMode,
   undo,
-  redo
+  redo,
+  extractPages,
+  deletePages,
+  rotatePages,
+  splitPdf
 };
 

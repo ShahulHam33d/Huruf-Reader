@@ -1,7 +1,7 @@
 # HurufReader — Architecture
 
 ## Stack & Pinned Dependencies
-- Electron 44.7.0 (Chromium 134, Node 24.16.0), plain JavaScript, pdfjs-dist 6.4.299.
+- Electron 44.7.0 (Chromium 134, Node 24.16.0), plain JavaScript, pdfjs-dist 6.4.299, pdf-lib 1.17.1 (main process only).
 - Security: contextIsolation true, nodeIntegration false, sandbox true, strict CSP, no network.
 
 ## Multi-Document Tab Architecture
@@ -65,3 +65,10 @@
 - **Safe Writes**: Atomic write to `<id>.tmp.pdf` / `<id>.tmp.json`, then renamed over `<id>.pdf` / `<id>.json`. JSON stores only `originalFilePath`, `originalFileName`, and `timestamp` (ISO string).
 - **Cleanup**: Recovery files deleted on successful Save As, on Discard (close tab / close app), and on clean close of unmodified tabs. Retained on Cancel. Startup purges files older than 14 days.
 - **Startup Restore**: Prompts user (`[Restore, Discard, Ask Me Later]`). Restored tabs open with `(recovered) <name>`, marked modified, and open through standard probe and junk-byte trim pipeline.
+
+## Page Operations (Phase 3A)
+- **Main-Process Engine (`pageops.js`)**: Uses `pdf-lib 1.17.1` exclusively in the main process for `extractPages`, `deletePages`, `rotatePages`, and `splitPdf`, plus a shared 1-based range parser (`"1-3, 5, 8-10"`, sorted and deduplicated) and leading junk-byte trim.
+- **Non-Destructive Flow**: Operations read committed bytes from the source tab via `commitAndSaveDocument()` (preserving unsaved annotations), never modify the source tab or original file, and open Extract/Delete/Rotate results in a new `(edited) <name>` tab marked unsaved.
+- **Split**: Supports "every N pages" or range lists, capped at 200 files, prompting for an output folder and writing `<original>_partN.pdf` (appending `_1`, `_2`, ... to avoid overwriting).
+- **Commands & UI**: Exposed via `commands.js` (`extractPages`, `deletePages`, `rotatePages`, `splitPdf`). The `Pages` menu opens a plain-HTML modal inside `viewer.html` with inline validation, `Cancel`, and `Esc` support.
+- **Known Limits**: Extracting pages into a new `PDFDocument` drops document-level `/Outlines` (bookmarks); deleting pages preserves `/Outlines` on the remaining document, though targets pointing to deleted pages become invalid. Page-level `/Annots` (such as links) on copied pages are preserved.

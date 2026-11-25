@@ -1015,7 +1015,8 @@ if (window.viewerAPI) {
         applyTheme(payload.theme);
       }
       if (payload.hasUnsavedChanges) {
-        setTabUnsavedChanges(true, 'restored recovered document');
+        changedSinceLastRecoveryWrite = true;
+        setTabUnsavedChanges(true, 'restored or edited document');
       } else {
         tabHasUnsavedChanges = false;
         changedSinceLastRecoveryWrite = false;
@@ -1093,6 +1094,143 @@ if (window.viewerAPI) {
         setTabUnsavedChanges(true, 'redo action');
         currentUIManager.redo();
       }
+    });
+  }
+
+  if (window.viewerAPI.onRequestBytes) {
+    window.viewerAPI.onRequestBytes(async () => {
+      if (!currentDoc) {
+        throw new Error('No document loaded.');
+      }
+      return await commitAndSaveDocument();
+    });
+  }
+
+  const pageOpsOverlay = document.getElementById('pageOpsOverlay');
+  const pageOpsTitle = document.getElementById('pageOpsTitle');
+  const pageOpsTotal = document.getElementById('pageOpsTotal');
+  const pageOpsSplitModeGroup = document.getElementById('pageOpsSplitModeGroup');
+  const pageOpsSplitMode = document.getElementById('pageOpsSplitMode');
+  const pageOpsSplitEveryGroup = document.getElementById('pageOpsSplitEveryGroup');
+  const pageOpsSplitEvery = document.getElementById('pageOpsSplitEvery');
+  const pageOpsRangeGroup = document.getElementById('pageOpsRangeGroup');
+  const pageOpsRangeLabel = document.getElementById('pageOpsRangeLabel');
+  const pageOpsRangeInput = document.getElementById('pageOpsRangeInput');
+  const pageOpsRotateGroup = document.getElementById('pageOpsRotateGroup');
+  const pageOpsRotateSelect = document.getElementById('pageOpsRotateSelect');
+  const pageOpsError = document.getElementById('pageOpsError');
+  const pageOpsCancelBtn = document.getElementById('pageOpsCancelBtn');
+  const pageOpsSubmitBtn = document.getElementById('pageOpsSubmitBtn');
+
+  let activePageOp = null;
+
+  function syncSplitModalFields() {
+    if (activePageOp !== 'split') {
+      pageOpsSplitModeGroup.classList.add('hidden');
+      pageOpsSplitEveryGroup.classList.add('hidden');
+      pageOpsRangeGroup.classList.remove('hidden');
+      pageOpsRangeLabel.textContent = 'Pages (e.g. 1-3, 5, 8-10):';
+      return;
+    }
+    pageOpsSplitModeGroup.classList.remove('hidden');
+    if (pageOpsSplitMode.value === 'every') {
+      pageOpsSplitEveryGroup.classList.remove('hidden');
+      pageOpsRangeGroup.classList.add('hidden');
+    } else {
+      pageOpsSplitEveryGroup.classList.add('hidden');
+      pageOpsRangeGroup.classList.remove('hidden');
+      pageOpsRangeLabel.textContent = 'Ranges (e.g. 1-3; 4-6):';
+    }
+  }
+
+  function closePageOpsModal() {
+    activePageOp = null;
+    if (pageOpsOverlay) {
+      pageOpsOverlay.classList.add('hidden');
+    }
+  }
+
+  function openPageOpsModal(op) {
+    if (!currentDoc || !pageOpsOverlay) return;
+    activePageOp = op;
+    const titles = {
+      extract: 'Extract Pages',
+      delete: 'Delete Pages',
+      rotate: 'Rotate Pages',
+      split: 'Split Document'
+    };
+    pageOpsTitle.textContent = titles[op] || 'Page Operation';
+    pageOpsTotal.textContent = String(currentDoc.numPages);
+    pageOpsError.textContent = '';
+    pageOpsRangeInput.value = '';
+    pageOpsSplitEvery.value = '2';
+    pageOpsSplitMode.value = 'every';
+    pageOpsRotateSelect.value = '90';
+    pageOpsRotateGroup.classList.toggle('hidden', op !== 'rotate');
+    syncSplitModalFields();
+    pageOpsOverlay.classList.remove('hidden');
+    if (op === 'split' && pageOpsSplitMode.value === 'every') {
+      pageOpsSplitEvery.focus();
+    } else {
+      pageOpsRangeInput.focus();
+    }
+  }
+
+  async function submitPageOpsModal() {
+    if (!activePageOp || !window.viewerAPI.executePageOp) return;
+    pageOpsError.textContent = '';
+    pageOpsSubmitBtn.disabled = true;
+    try {
+      let payload;
+      if (activePageOp === 'split') {
+        if (pageOpsSplitMode.value === 'every') {
+          payload = { op: 'split', spec: { mode: 'every', every: Number(pageOpsSplitEvery.value) } };
+        } else {
+          payload = { op: 'split', spec: { mode: 'ranges', ranges: pageOpsRangeInput.value } };
+        }
+      } else if (activePageOp === 'rotate') {
+        payload = { op: 'rotate', range: pageOpsRangeInput.value, degrees: Number(pageOpsRotateSelect.value) };
+      } else {
+        payload = { op: activePageOp, range: pageOpsRangeInput.value };
+      }
+
+      const res = await window.viewerAPI.executePageOp(payload);
+      if (res && res.validationError) {
+        pageOpsError.textContent = res.validationError;
+        return;
+      }
+      closePageOpsModal();
+    } catch (err) {
+      pageOpsError.textContent = err.message || String(err);
+    } finally {
+      pageOpsSubmitBtn.disabled = false;
+    }
+  }
+
+  if (pageOpsSplitMode) {
+    pageOpsSplitMode.addEventListener('change', syncSplitModalFields);
+  }
+  if (pageOpsCancelBtn) {
+    pageOpsCancelBtn.addEventListener('click', closePageOpsModal);
+  }
+  if (pageOpsSubmitBtn) {
+    pageOpsSubmitBtn.addEventListener('click', submitPageOpsModal);
+  }
+  if (pageOpsOverlay) {
+    pageOpsOverlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closePageOpsModal();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        submitPageOpsModal();
+      }
+    });
+  }
+
+  if (window.viewerAPI.onOpenPageOpsModal) {
+    window.viewerAPI.onOpenPageOpsModal((op) => {
+      openPageOpsModal(op);
     });
   }
 }

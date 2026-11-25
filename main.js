@@ -2,6 +2,7 @@ const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session } = 
 const path = require('path');
 const fs = require('fs');
 const commands = require('./commands');
+const pageops = require('./pageops');
 
 const TAB_BAR_HEIGHT = 40;
 let mainWindow = null;
@@ -726,6 +727,10 @@ commands.initCommands({
   setTabAnnotationMode,
   undo: undoTab,
   redo: redoTab,
+  extractPages: extractPagesTab,
+  deletePages: deletePagesTab,
+  rotatePages: rotatePagesTab,
+  splitPdf: splitPdfTab,
   getActiveTabId: () => activeTabId
 });
 
@@ -803,6 +808,28 @@ function updateMenu() {
           type: 'checkbox',
           checked: settings.invertColors,
           click: (item) => commands.setInvertColors(item.checked)
+        }
+      ]
+    },
+    {
+      label: 'Pages',
+      submenu: [
+        {
+          label: 'Extract Pages...',
+          click: () => openPageOpsModal('extract')
+        },
+        {
+          label: 'Delete Pages...',
+          click: () => openPageOpsModal('delete')
+        },
+        {
+          label: 'Rotate Pages...',
+          click: () => openPageOpsModal('rotate')
+        },
+        { type: 'separator' },
+        {
+          label: 'Split Document...',
+          click: () => openPageOpsModal('split')
         }
       ]
     },
@@ -1220,6 +1247,286 @@ ipcMain.on('report-stamp-error', (event, data) => {
     'Invalid Image',
     `${fileName}\n\nThis file is not a valid PNG or JPEG image.`
   );
+});
+
+async function requestTabBytes(tab) {
+  if (!tab || !tab.view || tab.view.webContents.isDestroyed()) {
+    throw new Error('Active tab is not available.');
+  }
+  return new Promise((resolve, reject) => {
+    let handled = false;
+    const timeout = setTimeout(() => {
+      if (!handled) {
+        handled = true;
+        reject(new Error('Timed out waiting for document bytes from viewer.'));
+      }
+    }, 15000);
+
+    const replyChannel = `tab-bytes-reply-${tab.id}-${Date.now()}`;
+    ipcMain.once(replyChannel, (event, result) => {
+      if (!handled) {
+        handled = true;
+        clearTimeout(timeout);
+        if (result && result.error) {
+          reject(new Error(result.error));
+        } else if (result && result.bytes) {
+          resolve(Buffer.from(result.bytes));
+        } else {
+          reject(new Error('No document data received.'));
+        }
+      }
+    });
+
+    tab.view.webContents.send('request-tab-bytes', replyChannel);
+  });
+}
+
+async function openEditedBuffer(sourceTab, newBytes) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const cleanSourceName = (sourceTab.fileName || 'document.pdf')
+    .replace(/^\(edited\)\s+/i, '')
+    .replace(/^\(recovered\)\s+/i, '');
+  const fileName = `(edited) ${cleanSourceName}`;
+  const originalFilePath = sourceTab.filePath || '';
+
+  let fileBuffer = Buffer.from(newBytes);
+  const headerIndex = fileBuffer.subarray(0, 1024).indexOf('%PDF-');
+  if (headerIndex > 0) {
+    fileBuffer = fileBuffer.subarray(headerIndex);
+  } else if (headerIndex === -1) {
+    console.error(`Corrupted edited PDF: Missing %PDF- header for "${fileName}"`);
+    dialog.showErrorBox(
+      'Page Operation Error',
+      `HurufReader could not open the edited document for "${cleanSourceName}".`
+    );
+    return;
+  }
+
+  try {
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const probeTask = pdfjsLib.getDocument({
+      data: new Uint8Array(fileBuffer),
+      isEvalSupported: false
+    });
+    await probeTask.promise;
+  } catch (err) {
+    console.error(`Technical error validating edited PDF "${fileName}":`, err);
+    dialog.showErrorBox(
+      'Page Operation Error',
+      `HurufReader could not open the edited document for "${cleanSourceName}".\n\nThe output appears to be damaged or unsupported.`
+    );
+    return;
+  }
+
+  const tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+
+  const tabView = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.js'),
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      navigateOnDragDrop: false
+    }
+  });
+
+  tabView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  tabView.webContents.on('will-navigate', (e) => e.preventDefault());
+
+  tabView.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown') {
+      if (input.control && input.key === 'Tab') {
+        event.preventDefault();
+        if (input.shift) switchPrevTab();
+        else switchNextTab();
+      } else if (input.control && input.key.toLowerCase() === 'w') {
+        event.preventDefault();
+        commands.closeTab();
+      } else if (input.control && input.key.toLowerCase() === 'o') {
+        event.preventDefault();
+        commands.openFile();
+      } else if (input.control && input.shift && input.key.toLowerCase() === 'd') {
+        event.preventDefault();
+        commands.setDarkMode();
+      } else if (input.control && input.shift && input.key.toLowerCase() === 's') {
+        event.preventDefault();
+        commands.saveAs();
+      }
+    }
+  });
+
+  const tabObj = {
+    id: tabId,
+    filePath: originalFilePath,
+    fileName,
+    view: tabView,
+    unsavedChanges: true,
+    modified: true,
+    annotationMode: 0
+  };
+
+  tabs.push(tabObj);
+  tabView.webContents.loadFile('viewer.html');
+
+  tabView.webContents.on('did-finish-load', () => {
+    tabView.webContents.send('load-document', {
+      tabId,
+      filePath: originalFilePath,
+      fileName,
+      buffer: fileBuffer,
+      theme: {
+        darkMode: settings.darkMode,
+        invertColors: settings.invertColors
+      },
+      hasUnsavedChanges: true
+    });
+  });
+
+  switchTab(tabId);
+}
+
+function openPageOpsModal(op) {
+  if (!activeTabId) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showErrorBox('No Document Open', 'Open a PDF document first to use page operations.');
+    }
+    return;
+  }
+  const tab = tabs.find(t => t.id === activeTabId);
+  if (tab && tab.view && !tab.view.webContents.isDestroyed()) {
+    tab.view.webContents.send('open-page-ops-modal', op);
+  }
+}
+
+async function runSingleTabPageOp(tabId, fn) {
+  const tab = tabs.find(t => t.id === tabId);
+  if (!tab) return { success: false, error: 'Tab not found.' };
+
+  let sourceBytes;
+  try {
+    sourceBytes = await requestTabBytes(tab);
+  } catch (err) {
+    console.error(`Failed to read bytes from tab "${tab.fileName}":`, err);
+    dialog.showErrorBox(
+      'Page Operation Error',
+      `Could not read "${tab.fileName}" for page operations.`
+    );
+    return { success: false, error: err.message };
+  }
+
+  let resultBytes;
+  try {
+    resultBytes = await fn(sourceBytes);
+  } catch (err) {
+    if (err && err.isValidationError) {
+      return { success: false, validationError: err.message };
+    }
+    console.error(`Page operation failed for "${tab.fileName}":`, err);
+    dialog.showErrorBox(
+      'Page Operation Error',
+      `HurufReader could not process "${tab.fileName}".\n\nThe file may be encrypted, damaged, or unsupported.`
+    );
+    return { success: false, error: err.message };
+  }
+
+  await openEditedBuffer(tab, resultBytes);
+  return { success: true };
+}
+
+async function extractPagesTab(tabId, rangeStr) {
+  return await runSingleTabPageOp(tabId, (bytes) => pageops.extractPages(bytes, rangeStr));
+}
+
+async function deletePagesTab(tabId, rangeStr) {
+  return await runSingleTabPageOp(tabId, (bytes) => pageops.deletePages(bytes, rangeStr));
+}
+
+async function rotatePagesTab(tabId, rangeStr, degrees) {
+  return await runSingleTabPageOp(tabId, (bytes) => pageops.rotatePages(bytes, rangeStr, degrees));
+}
+
+async function splitPdfTab(tabId, spec) {
+  const tab = tabs.find(t => t.id === tabId);
+  if (!tab) return { success: false, error: 'Tab not found.' };
+
+  let sourceBytes;
+  try {
+    sourceBytes = await requestTabBytes(tab);
+  } catch (err) {
+    console.error(`Failed to read bytes from tab "${tab.fileName}":`, err);
+    dialog.showErrorBox(
+      'Split Error',
+      `Could not read "${tab.fileName}" for splitting.`
+    );
+    return { success: false, error: err.message };
+  }
+
+  let splitResult;
+  try {
+    splitResult = await pageops.splitPdf(sourceBytes, spec);
+  } catch (err) {
+    if (err && err.isValidationError) {
+      return { success: false, validationError: err.message };
+    }
+    console.error(`Split failed for "${tab.fileName}":`, err);
+    dialog.showErrorBox(
+      'Split Error',
+      `HurufReader could not process "${tab.fileName}".\n\nThe file may be encrypted, damaged, or unsupported.`
+    );
+    return { success: false, error: err.message };
+  }
+
+  const folderResult = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Output Folder for Split PDFs',
+    properties: ['openDirectory', 'createDirectory']
+  });
+
+  if (folderResult.canceled || !folderResult.filePaths || folderResult.filePaths.length === 0) {
+    return { success: false, canceled: true };
+  }
+
+  const outputDir = folderResult.filePaths[0];
+  try {
+    const written = pageops.writeSplitParts(splitResult.parts, outputDir, tab.fileName);
+    await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Split Complete',
+      message: `Wrote ${written.length} PDF file${written.length === 1 ? '' : 's'}.`,
+      detail: `Saved to: ${outputDir}`
+    });
+    return { success: true, count: written.length };
+  } catch (err) {
+    console.error(`Error writing split files to "${outputDir}":`, err);
+    dialog.showErrorBox(
+      'Split Error',
+      `Failed to write split PDF files for "${tab.fileName}".\n\n${err.message}`
+    );
+    return { success: false, error: err.message };
+  }
+}
+
+ipcMain.handle('execute-page-op', async (event, payload) => {
+  const senderTab = tabs.find(t => t.view && t.view.webContents === event.sender) ||
+                    tabs.find(t => t.id === activeTabId);
+  if (!senderTab || !payload || typeof payload !== 'object') {
+    return { success: false, error: 'Invalid request.' };
+  }
+
+  switch (payload.op) {
+    case 'extract':
+      return await commands.extractPages(senderTab.id, payload.range);
+    case 'delete':
+      return await commands.deletePages(senderTab.id, payload.range);
+    case 'rotate':
+      return await commands.rotatePages(senderTab.id, payload.range, payload.degrees);
+    case 'split':
+      return await commands.splitPdf(senderTab.id, payload.spec);
+    default:
+      return { success: false, error: 'Unknown page operation.' };
+  }
 });
 
 app.whenReady().then(() => {

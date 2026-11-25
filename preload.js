@@ -73,6 +73,22 @@ contextBridge.exposeInMainWorld('viewerAPI', {
   },
   onRedo: (callback) => {
     ipcRenderer.on('tab-do-redo', () => callback());
+  },
+  onRequestBytes: (callback) => {
+    ipcRenderer.on('request-tab-bytes', async (event, replyChannel) => {
+      try {
+        const bytes = await callback();
+        ipcRenderer.send(replyChannel, { bytes });
+      } catch (err) {
+        ipcRenderer.send(replyChannel, { error: err.message || String(err) });
+      }
+    });
+  },
+  onOpenPageOpsModal: (callback) => {
+    ipcRenderer.on('open-page-ops-modal', (event, op) => callback(op));
+  },
+  executePageOp: (payload) => {
+    return ipcRenderer.invoke('execute-page-op', payload);
   }
 });
 
