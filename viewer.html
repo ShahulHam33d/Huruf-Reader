@@ -420,7 +420,8 @@
 
     /* Password Modal & Page Ops Modal */
     #passwordOverlay,
-    #pageOpsOverlay {
+    #pageOpsOverlay,
+    #mergeOpsOverlay {
       position: fixed;
       top: 0;
       left: 0;
@@ -435,8 +436,44 @@
 
     #passwordOverlay.hidden,
     #pageOpsOverlay.hidden,
+    #mergeOpsOverlay.hidden,
     .page-ops-group.hidden {
       display: none;
+    }
+
+    .merge-file-list {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+      border: 1px solid var(--toolbar-border);
+      border-radius: 4px;
+      background: var(--input-bg);
+      padding: 4px;
+    }
+
+    .merge-file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 8px;
+      font-size: 13px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    .merge-file-item:hover {
+      background: var(--btn-hover);
+    }
+
+    .merge-file-item.selected {
+      background: var(--item-active-bg);
+    }
+
+    .merge-file-pages {
+      font-size: 12px;
+      opacity: 0.75;
+      margin-left: 8px;
+      flex-shrink: 0;
     }
 
     .page-ops-group {
@@ -714,10 +751,36 @@
         </select>
       </div>
 
+      <div id="pageOpsMoveToGroup" class="page-ops-group hidden">
+        <label for="pageOpsMoveToInput">Move before page (or total+1 for end):</label>
+        <input type="number" id="pageOpsMoveToInput" min="1" value="1">
+      </div>
+
       <div id="pageOpsError" class="modal-error"></div>
       <div class="modal-buttons">
         <button id="pageOpsCancelBtn" class="modal-btn">Cancel</button>
         <button id="pageOpsSubmitBtn" class="modal-btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Merge Documents Modal -->
+  <div id="mergeOpsOverlay" class="hidden">
+    <div class="modal-box" style="width: 440px;">
+      <h3>Merge Documents</h3>
+      <p>Add at least 2 PDF files in order (max 20 files, 300 MB total).</p>
+      <div id="mergeFileList" class="merge-file-list"></div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
+        <button id="mergeAddFilesBtn" class="modal-btn">Add files...</button>
+        <button id="mergeAddCurrentBtn" class="modal-btn">Add current tab</button>
+        <button id="mergeRemoveBtn" class="modal-btn" disabled>Remove</button>
+        <button id="mergeMoveUpBtn" class="modal-btn" disabled>Move Up</button>
+        <button id="mergeMoveDownBtn" class="modal-btn" disabled>Move Down</button>
+      </div>
+      <div id="mergeFileError" class="modal-error"></div>
+      <div class="modal-buttons">
+        <button id="mergeCancelBtn" class="modal-btn">Cancel</button>
+        <button id="mergeSubmitBtn" class="modal-btn primary" disabled>Merge</button>
       </div>
     </div>
   </div>

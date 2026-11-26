@@ -731,6 +731,9 @@ commands.initCommands({
   deletePages: deletePagesTab,
   rotatePages: rotatePagesTab,
   splitPdf: splitPdfTab,
+  mergePdfs: mergePdfsMain,
+  reorderPages: reorderPagesTab,
+  movePages: movePagesTab,
   getActiveTabId: () => activeTabId
 });
 
@@ -826,7 +829,15 @@ function updateMenu() {
           label: 'Rotate Pages...',
           click: () => openPageOpsModal('rotate')
         },
+        {
+          label: 'Move Pages...',
+          click: () => openPageOpsModal('move')
+        },
         { type: 'separator' },
+        {
+          label: 'Merge Documents...',
+          click: () => openPageOpsModal('merge')
+        },
         {
           label: 'Split Document...',
           click: () => openPageOpsModal('split')
@@ -1281,14 +1292,18 @@ async function requestTabBytes(tab) {
   });
 }
 
-async function openEditedBuffer(sourceTab, newBytes) {
+async function openEditedBuffer(sourceTab, newBytes, options = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  const cleanSourceName = (sourceTab.fileName || 'document.pdf')
-    .replace(/^\(edited\)\s+/i, '')
-    .replace(/^\(recovered\)\s+/i, '');
-  const fileName = `(edited) ${cleanSourceName}`;
-  const originalFilePath = sourceTab.filePath || '';
+  const cleanSourceName = sourceTab && sourceTab.fileName
+    ? sourceTab.fileName
+        .replace(/^\(edited\)\s+/i, '')
+        .replace(/^\(recovered\)\s+/i, '')
+    : 'document.pdf';
+  const fileName = options.fileName || `(edited) ${cleanSourceName}`;
+  const originalFilePath = options.filePath !== undefined
+    ? options.filePath
+    : (sourceTab ? sourceTab.filePath || '' : '');
 
   let fileBuffer = Buffer.from(newBytes);
   const headerIndex = fileBuffer.subarray(0, 1024).indexOf('%PDF-');
@@ -1448,6 +1463,62 @@ async function rotatePagesTab(tabId, rangeStr, degrees) {
   return await runSingleTabPageOp(tabId, (bytes) => pageops.rotatePages(bytes, rangeStr, degrees));
 }
 
+async function reorderPagesTab(tabId, order) {
+  return await runSingleTabPageOp(tabId, (bytes) => pageops.reorderPages(bytes, order));
+}
+
+async function movePagesTab(tabId, rangeStr, toPosition) {
+  return await runSingleTabPageOp(tabId, (bytes) => pageops.movePages(bytes, rangeStr, toPosition));
+}
+
+async function mergePdfsMain(listOfBytesArrays) {
+  let resultBytes;
+  try {
+    const buffers = listOfBytesArrays.map(arr => Buffer.from(arr));
+    resultBytes = await pageops.mergePdfs(buffers);
+  } catch (err) {
+    if (err && err.isValidationError) {
+      return { success: false, validationError: err.message };
+    }
+    console.error('Merge failed:', err);
+    dialog.showErrorBox(
+      'Merge Error',
+      `HurufReader could not merge the selected documents.\n\n${err.message}`
+    );
+    return { success: false, error: err.message };
+  }
+
+  await openEditedBuffer(null, resultBytes, { fileName: '(merged)', filePath: '' });
+  return { success: true };
+}
+
+async function probePdfBytesForMerge(fileName, rawBuf) {
+  try {
+    const trimmed = pageops.trimJunkBytes(rawBuf);
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(trimmed),
+      isEvalSupported: false
+    });
+    const doc = await loadingTask.promise;
+    const pageCount = doc.numPages;
+    await loadingTask.destroy();
+    await pageops.probePdfLib(trimmed);
+    return {
+      name: fileName,
+      pageCount,
+      sizeBytes: trimmed.length,
+      bytes: Array.from(trimmed)
+    };
+  } catch (err) {
+    console.error(`Failed to probe "${fileName}" for merge:`, err);
+    const msg = (err && err.name === 'PasswordException') || (err && /encrypt|password/i.test(err.message || ''))
+      ? 'password-protected'
+      : 'damaged or unreadable';
+    return { name: fileName, error: `"${fileName}" is ${msg} and was left out.` };
+  }
+}
+
 async function splitPdfTab(tabId, spec) {
   const tab = tabs.find(t => t.id === tabId);
   if (!tab) return { success: false, error: 'Tab not found.' };
@@ -1522,8 +1593,44 @@ ipcMain.handle('execute-page-op', async (event, payload) => {
       return await commands.deletePages(senderTab.id, payload.range);
     case 'rotate':
       return await commands.rotatePages(senderTab.id, payload.range, payload.degrees);
+    case 'move':
+      return await commands.movePages(senderTab.id, payload.range, payload.toPosition);
     case 'split':
       return await commands.splitPdf(senderTab.id, payload.spec);
+    case 'merge-add-files': {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: 'Add PDF Files to Merge',
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+      });
+      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return { success: true, files: [] };
+      }
+      const files = [];
+      for (const fp of result.filePaths) {
+        const baseName = path.basename(fp);
+        try {
+          const rawBuf = fs.readFileSync(fp);
+          files.push(await probePdfBytesForMerge(baseName, rawBuf));
+        } catch (err) {
+          console.error(`Failed to read "${fp}" for merge:`, err);
+          files.push({ name: baseName, error: `"${baseName}" could not be read and was left out.` });
+        }
+      }
+      return { success: true, files };
+    }
+    case 'merge-add-current': {
+      try {
+        const bytes = await requestTabBytes(senderTab);
+        const probed = await probePdfBytesForMerge(senderTab.fileName, Buffer.from(bytes));
+        return { success: true, files: [probed] };
+      } catch (err) {
+        console.error(`Failed to read current tab "${senderTab.fileName}" for merge:`, err);
+        return { success: true, files: [{ name: senderTab.fileName, error: `"${senderTab.fileName}" could not be read and was left out.` }] };
+      }
+    }
+    case 'merge':
+      return await commands.mergePdfs(payload.items);
     default:
       return { success: false, error: 'Unknown page operation.' };
   }

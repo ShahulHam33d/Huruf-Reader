@@ -228,6 +228,73 @@ async function splitPdf(tabId, spec) {
   return await ctx.splitPdf(targetId, spec);
 }
 
+/**
+ * Merge 2 or more PDF byte buffers into a new "(merged)" tab.
+ * @param {Array<Buffer|Uint8Array|number[]>} listOfBytes
+ * @returns {Promise<{success: boolean, validationError?: string, error?: string}>}
+ */
+async function mergePdfs(listOfBytes) {
+  if (!ctx || !ctx.mergePdfs) return { success: false, error: 'Not initialized' };
+  if (!Array.isArray(listOfBytes) || listOfBytes.length < 2) {
+    return { success: false, validationError: 'Select at least 2 PDF files to merge.' };
+  }
+  if (listOfBytes.length > 20) {
+    return { success: false, validationError: 'Cannot merge more than 20 files at once.' };
+  }
+  let totalBytes = 0;
+  for (const item of listOfBytes) {
+    if (!item || typeof item.length !== 'number') {
+      return { success: false, validationError: 'Invalid PDF data in merge list.' };
+    }
+    totalBytes += item.length;
+  }
+  if (totalBytes > 300 * 1024 * 1024) {
+    return { success: false, validationError: 'Total input size exceeds the 300 MB limit.' };
+  }
+  return await ctx.mergePdfs(listOfBytes);
+}
+
+/**
+ * Reorder all pages of a tab's PDF into a new "(edited)" tab.
+ * @param {string} [tabId]
+ * @param {number[]} order
+ * @returns {Promise<{success: boolean, validationError?: string, error?: string}>}
+ */
+async function reorderPages(tabId, order) {
+  if (!ctx || !ctx.reorderPages) return { success: false, error: 'Not initialized' };
+  const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
+  if (!targetId) return { success: false, error: 'No active tab' };
+  if (!Array.isArray(order) || order.length === 0) {
+    return { success: false, validationError: 'Page order cannot be empty.' };
+  }
+  for (const p of order) {
+    if (typeof p !== 'number' || !Number.isInteger(p) || p < 1) {
+      return { success: false, validationError: 'Page order must contain positive integers.' };
+    }
+  }
+  return await ctx.reorderPages(targetId, order);
+}
+
+/**
+ * Move selected pages before toPosition (or to end if total+1) into a new "(edited)" tab.
+ * @param {string} [tabId]
+ * @param {string} rangeStr
+ * @param {number} toPosition
+ * @returns {Promise<{success: boolean, validationError?: string, error?: string}>}
+ */
+async function movePages(tabId, rangeStr, toPosition) {
+  if (!ctx || !ctx.movePages) return { success: false, error: 'Not initialized' };
+  const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
+  if (!targetId) return { success: false, error: 'No active tab' };
+  if (typeof rangeStr !== 'string' || rangeStr.trim().length === 0) {
+    return { success: false, validationError: 'Page selection cannot be empty.' };
+  }
+  if (typeof toPosition !== 'number' || !Number.isInteger(toPosition) || toPosition < 1) {
+    return { success: false, validationError: '"Move before page" must be a positive integer.' };
+  }
+  return await ctx.movePages(targetId, rangeStr.trim(), toPosition);
+}
+
 module.exports = {
   initCommands,
   openFile,
@@ -242,6 +309,9 @@ module.exports = {
   extractPages,
   deletePages,
   rotatePages,
-  splitPdf
+  splitPdf,
+  mergePdfs,
+  reorderPages,
+  movePages
 };
 

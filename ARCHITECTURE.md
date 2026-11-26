@@ -72,3 +72,8 @@
 - **Split**: Supports "every N pages" or range lists, capped at 200 files, prompting for an output folder and writing `<original>_partN.pdf` (appending `_1`, `_2`, ... to avoid overwriting).
 - **Commands & UI**: Exposed via `commands.js` (`extractPages`, `deletePages`, `rotatePages`, `splitPdf`). The `Pages` menu opens a plain-HTML modal inside `viewer.html` with inline validation, `Cancel`, and `Esc` support.
 - **Known Limits**: Extracting pages into a new `PDFDocument` drops document-level `/Outlines` (bookmarks); deleting pages preserves `/Outlines` on the remaining document, though targets pointing to deleted pages become invalid. Page-level `/Annots` (such as links) on copied pages are preserved.
+
+## Merge & Reorder (Phase 3B)
+- **Merge (`mergePdfs`)**: Copies pages from 2–20 inputs (300 MB total cap) into a new `(merged)` tab marked unsaved. Probed on add so password-protected, damaged, or unreadable files are named in an inline error and excluded.
+- **Reorder & Move (`reorderPages`, `movePages`)**: `reorderPages` validates a full 1-based permutation of every page; `movePages` builds that order from the range parser (`toPosition = total + 1` appends to end) and opens `(edited) <name>`.
+- **Known Limits**: Merging and moving build a new `PDFDocument` via `copyPages`, which preserves page-level annotations/links but drops document-level `/Outlines` (bookmarks).

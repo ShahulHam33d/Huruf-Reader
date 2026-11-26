@@ -107,3 +107,10 @@ node verify.js test-pdfs/Dream_Textbook.pdf
 - [ ] **Split Document**: Run `Pages > Split Document...` with "Every 2 pages" (and again with ranges). Choose a folder, confirm `<name>_part1.pdf`, etc. are written, re-running in the same folder appends `_1` instead of overwriting, and a completion dialog shows the file count.
 - [ ] **Save As & Autosave on Edited Tab**: Confirm `Save As` works on an `(edited)` tab (still blocking overwrite of the original file) and autosave/recovery protects it if modified.
 - [ ] **Encrypted / Damaged File Error**: Attempt a page operation on a password-protected or damaged PDF. Confirm a native error dialog appears with the file name and no tab opens.
+
+### 10. Merge & Move Pages (Phase 3B)
+- [ ] **Merge Documents Modal**: Open `Pages > Merge Documents...`. Confirm the modal lists added files with name and page count, and Merge is disabled until at least 2 files are present.
+- [ ] **Add Files & Current Tab**: Click `Add files...` (PDF multi-select) and `Add current tab`. Confirm files appear in order and `Move Up`, `Move Down`, and `Remove` update the list without drag-and-drop.
+- [ ] **Merge Limits & Bad Files**: Try adding a password-protected/damaged PDF, > 20 files, or > 300 MB total. Confirm an inline error names the problem and leaves invalid files out without crashing.
+- [ ] **Merge Result Tab**: Merge 2+ files. Confirm a new `(merged)` tab opens with the unsaved dot, source tabs/files are untouched, and `Save As` writes the merged PDF.
+- [ ] **Move Pages**: Open `Pages > Move Pages...`, enter a range and `"Move before page"` (including `total + 1` for end). Confirm `(edited) <name>` opens with pages in the new order and inline validation rejects bad ranges or positions (`Cancel` / `Esc` closes).

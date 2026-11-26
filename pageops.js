@@ -3,6 +3,8 @@ const path = require('path');
 const { PDFDocument, degrees: pdfDegrees } = require('pdf-lib');
 
 const MAX_SPLIT_FILES = 200;
+const MAX_MERGE_FILES = 20;
+const MAX_MERGE_BYTES = 300 * 1024 * 1024;
 const ALLOWED_ROTATIONS = new Set([90, 180, 270, -90]);
 
 function validationError(message) {
@@ -302,14 +304,155 @@ function writeSplitParts(parts, outputDir, originalFileName) {
   return writtenPaths;
 }
 
+/**
+ * Merge 2 or more PDF byte buffers in order into a new PDF.
+ * @param {Array<Buffer|Uint8Array>} listOfBytes
+ * @returns {Promise<Uint8Array>}
+ */
+async function mergePdfs(listOfBytes) {
+  if (!Array.isArray(listOfBytes) || listOfBytes.length < 2) {
+    throw validationError('Merge requires at least 2 documents.');
+  }
+  if (listOfBytes.length > MAX_MERGE_FILES) {
+    throw validationError(`Merge is limited to at most ${MAX_MERGE_FILES} files.`);
+  }
+
+  let totalBytes = 0;
+  for (const bytes of listOfBytes) {
+    if (!bytes || typeof bytes.length !== 'number') {
+      throw validationError('Invalid PDF input in merge list.');
+    }
+    totalBytes += bytes.length;
+  }
+  if (totalBytes > MAX_MERGE_BYTES) {
+    throw validationError('Total input size exceeds the 300 MB merge limit.');
+  }
+
+  const newDoc = await PDFDocument.create();
+  for (const bytes of listOfBytes) {
+    const trimmed = trimJunkBytes(bytes);
+    const srcDoc = await PDFDocument.load(trimmed);
+    const indices = Array.from({ length: srcDoc.getPageCount() }, (_, i) => i);
+    const copied = await newDoc.copyPages(srcDoc, indices);
+    for (const page of copied) {
+      newDoc.addPage(page);
+    }
+  }
+  return await newDoc.save();
+}
+
+/**
+ * Reorder all pages of a PDF according to a full 1-based page list.
+ * Rejects duplicates, missing pages, out-of-range, and non-integer values.
+ * @param {Buffer|Uint8Array} bytes
+ * @param {number[]} order
+ * @returns {Promise<Uint8Array>}
+ */
+async function reorderPages(bytes, order) {
+  const trimmed = trimJunkBytes(bytes);
+  const srcDoc = await PDFDocument.load(trimmed);
+  const total = srcDoc.getPageCount();
+
+  if (!Array.isArray(order)) {
+    throw validationError('Page order must be an array of page numbers.');
+  }
+
+  const seen = new Set();
+  for (const p of order) {
+    if (typeof p !== 'number' || !Number.isInteger(p)) {
+      throw validationError(`Invalid page number "${p}": must be an integer.`);
+    }
+    if (p < 1 || p > total) {
+      throw validationError(`Page ${p} is out of range (document has ${total} page${total === 1 ? '' : 's'}).`);
+    }
+    if (seen.has(p)) {
+      throw validationError(`Duplicate page ${p} in reorder list.`);
+    }
+    seen.add(p);
+  }
+
+  if (seen.size !== total) {
+    const missing = [];
+    for (let p = 1; p <= total; p++) {
+      if (!seen.has(p)) missing.push(p);
+    }
+    throw validationError(`Reorder list is missing page(s): ${missing.join(', ')}.`);
+  }
+
+  const newDoc = await PDFDocument.create();
+  const indices = order.map(p => p - 1);
+  const copied = await newDoc.copyPages(srcDoc, indices);
+  for (const page of copied) {
+    newDoc.addPage(page);
+  }
+  return await newDoc.save();
+}
+
+/**
+ * Move pages selected by rangeString (in ascending order) before the page
+ * currently at toPosition (1..total), or to the end if toPosition is total + 1.
+ * @param {Buffer|Uint8Array} bytes
+ * @param {string} rangeString
+ * @param {number} toPosition
+ * @returns {Promise<Uint8Array>}
+ */
+async function movePages(bytes, rangeString, toPosition) {
+  const trimmed = trimJunkBytes(bytes);
+  const srcDoc = await PDFDocument.load(trimmed);
+  const total = srcDoc.getPageCount();
+
+  if (typeof toPosition !== 'number' || !Number.isInteger(toPosition) || toPosition < 1 || toPosition > total + 1) {
+    throw validationError(`"Move before page" must be an integer between 1 and ${total + 1}.`);
+  }
+
+  const movedPages = parsePageRange(rangeString, total);
+  const movedSet = new Set(movedPages);
+  const remaining = [];
+  for (let p = 1; p <= total; p++) {
+    if (!movedSet.has(p)) {
+      remaining.push(p);
+    }
+  }
+
+  let insertIdx = remaining.findIndex(p => p >= toPosition);
+  if (insertIdx === -1) {
+    insertIdx = remaining.length;
+  }
+
+  const finalOrder = [
+    ...remaining.slice(0, insertIdx),
+    ...movedPages,
+    ...remaining.slice(insertIdx)
+  ];
+
+  return await reorderPages(trimmed, finalOrder);
+}
+
+/**
+ * Verify that pdf-lib can load the trimmed PDF (catches encrypted or damaged files).
+ * @param {Buffer|Uint8Array} bytes
+ * @returns {Promise<number>}
+ */
+async function probePdfLib(bytes) {
+  const trimmed = trimJunkBytes(bytes);
+  const doc = await PDFDocument.load(trimmed);
+  return doc.getPageCount();
+}
+
 module.exports = {
   MAX_SPLIT_FILES,
+  MAX_MERGE_FILES,
+  MAX_MERGE_BYTES,
   trimJunkBytes,
   parsePageRange,
   extractPages,
   deletePages,
   rotatePages,
   splitPdf,
+  mergePdfs,
+  reorderPages,
+  movePages,
+  probePdfLib,
   getUniquePartPath,
   writeSplitParts
 };

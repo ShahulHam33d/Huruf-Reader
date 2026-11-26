@@ -1118,11 +1118,28 @@ if (window.viewerAPI) {
   const pageOpsRangeInput = document.getElementById('pageOpsRangeInput');
   const pageOpsRotateGroup = document.getElementById('pageOpsRotateGroup');
   const pageOpsRotateSelect = document.getElementById('pageOpsRotateSelect');
+  const pageOpsMoveToGroup = document.getElementById('pageOpsMoveToGroup');
+  const pageOpsMoveToInput = document.getElementById('pageOpsMoveToInput');
   const pageOpsError = document.getElementById('pageOpsError');
   const pageOpsCancelBtn = document.getElementById('pageOpsCancelBtn');
   const pageOpsSubmitBtn = document.getElementById('pageOpsSubmitBtn');
 
+  const mergeOpsOverlay = document.getElementById('mergeOpsOverlay');
+  const mergeFileList = document.getElementById('mergeFileList');
+  const mergeFileError = document.getElementById('mergeFileError');
+  const mergeAddFilesBtn = document.getElementById('mergeAddFilesBtn');
+  const mergeAddCurrentBtn = document.getElementById('mergeAddCurrentBtn');
+  const mergeRemoveBtn = document.getElementById('mergeRemoveBtn');
+  const mergeMoveUpBtn = document.getElementById('mergeMoveUpBtn');
+  const mergeMoveDownBtn = document.getElementById('mergeMoveDownBtn');
+  const mergeCancelBtn = document.getElementById('mergeCancelBtn');
+  const mergeSubmitBtn = document.getElementById('mergeSubmitBtn');
+
   let activePageOp = null;
+  let mergeItems = [];
+  let selectedMergeIndex = -1;
+  const MAX_MERGE_FILES = 20;
+  const MAX_MERGE_BYTES = 300 * 1024 * 1024;
 
   function syncSplitModalFields() {
     if (activePageOp !== 'split') {
@@ -1152,11 +1169,16 @@ if (window.viewerAPI) {
 
   function openPageOpsModal(op) {
     if (!currentDoc || !pageOpsOverlay) return;
+    if (op === 'merge') {
+      openMergeModal();
+      return;
+    }
     activePageOp = op;
     const titles = {
       extract: 'Extract Pages',
       delete: 'Delete Pages',
       rotate: 'Rotate Pages',
+      move: 'Move Pages',
       split: 'Split Document'
     };
     pageOpsTitle.textContent = titles[op] || 'Page Operation';
@@ -1166,7 +1188,10 @@ if (window.viewerAPI) {
     pageOpsSplitEvery.value = '2';
     pageOpsSplitMode.value = 'every';
     pageOpsRotateSelect.value = '90';
+    pageOpsMoveToInput.value = '1';
+    pageOpsMoveToInput.max = String(currentDoc.numPages + 1);
     pageOpsRotateGroup.classList.toggle('hidden', op !== 'rotate');
+    pageOpsMoveToGroup.classList.toggle('hidden', op !== 'move');
     syncSplitModalFields();
     pageOpsOverlay.classList.remove('hidden');
     if (op === 'split' && pageOpsSplitMode.value === 'every') {
@@ -1190,6 +1215,13 @@ if (window.viewerAPI) {
         }
       } else if (activePageOp === 'rotate') {
         payload = { op: 'rotate', range: pageOpsRangeInput.value, degrees: Number(pageOpsRotateSelect.value) };
+      } else if (activePageOp === 'move') {
+        const toPos = Number(pageOpsMoveToInput.value);
+        if (!Number.isInteger(toPos) || toPos < 1 || toPos > currentDoc.numPages + 1) {
+          pageOpsError.textContent = `"Move before page" must be between 1 and ${currentDoc.numPages + 1}.`;
+          return;
+        }
+        payload = { op: 'move', range: pageOpsRangeInput.value, toPosition: toPos };
       } else {
         payload = { op: activePageOp, range: pageOpsRangeInput.value };
       }
@@ -1231,6 +1263,180 @@ if (window.viewerAPI) {
   if (window.viewerAPI.onOpenPageOpsModal) {
     window.viewerAPI.onOpenPageOpsModal((op) => {
       openPageOpsModal(op);
+    });
+  }
+
+  function renderMergeList() {
+    if (!mergeFileList) return;
+    mergeFileList.innerHTML = '';
+    if (mergeItems.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.padding = '8px';
+      empty.style.fontSize = '12px';
+      empty.style.opacity = '0.7';
+      empty.textContent = 'No files added yet.';
+      mergeFileList.appendChild(empty);
+    } else {
+      mergeItems.forEach((item, idx) => {
+        const row = document.createElement('div');
+        row.className = 'merge-file-item' + (idx === selectedMergeIndex ? ' selected' : '');
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = item.name;
+        nameSpan.style.overflow = 'hidden';
+        nameSpan.style.textOverflow = 'ellipsis';
+        nameSpan.style.whiteSpace = 'nowrap';
+        const pagesSpan = document.createElement('span');
+        pagesSpan.className = 'merge-file-pages';
+        pagesSpan.textContent = `${item.pageCount} page${item.pageCount === 1 ? '' : 's'}`;
+        row.appendChild(nameSpan);
+        row.appendChild(pagesSpan);
+        row.addEventListener('click', () => {
+          selectedMergeIndex = idx;
+          renderMergeList();
+        });
+        mergeFileList.appendChild(row);
+      });
+    }
+    mergeRemoveBtn.disabled = selectedMergeIndex < 0 || selectedMergeIndex >= mergeItems.length;
+    mergeMoveUpBtn.disabled = selectedMergeIndex <= 0;
+    mergeMoveDownBtn.disabled = selectedMergeIndex < 0 || selectedMergeIndex >= mergeItems.length - 1;
+    mergeSubmitBtn.disabled = mergeItems.length < 2;
+  }
+
+  function appendMergeCandidates(candidates) {
+    const errors = [];
+    let totalBytes = mergeItems.reduce((sum, it) => sum + it.sizeBytes, 0);
+    for (const file of candidates) {
+      if (file.error) {
+        errors.push(file.error);
+        continue;
+      }
+      if (mergeItems.length >= MAX_MERGE_FILES) {
+        errors.push(`Maximum of ${MAX_MERGE_FILES} files reached; "${file.name}" was left out.`);
+        continue;
+      }
+      if (totalBytes + file.sizeBytes > MAX_MERGE_BYTES) {
+        errors.push(`300 MB total limit exceeded; "${file.name}" was left out.`);
+        continue;
+      }
+      mergeItems.push(file);
+      totalBytes += file.sizeBytes;
+      selectedMergeIndex = mergeItems.length - 1;
+    }
+    if (errors.length > 0) {
+      mergeFileError.textContent = errors.join(' ');
+    }
+    renderMergeList();
+  }
+
+  function openMergeModal() {
+    if (!mergeOpsOverlay) return;
+    mergeItems = [];
+    selectedMergeIndex = -1;
+    mergeFileError.textContent = '';
+    renderMergeList();
+    mergeOpsOverlay.classList.remove('hidden');
+    mergeAddFilesBtn.focus();
+  }
+
+  function closeMergeModal() {
+    if (mergeOpsOverlay) {
+      mergeOpsOverlay.classList.add('hidden');
+    }
+    mergeItems = [];
+    selectedMergeIndex = -1;
+  }
+
+  if (mergeAddFilesBtn) {
+    mergeAddFilesBtn.addEventListener('click', async () => {
+      mergeFileError.textContent = '';
+      const res = await window.viewerAPI.executePageOp({ op: 'merge-add-files' });
+      if (res && Array.isArray(res.files)) {
+        appendMergeCandidates(res.files);
+      }
+    });
+  }
+
+  if (mergeAddCurrentBtn) {
+    mergeAddCurrentBtn.addEventListener('click', async () => {
+      mergeFileError.textContent = '';
+      const res = await window.viewerAPI.executePageOp({ op: 'merge-add-current' });
+      if (res && Array.isArray(res.files)) {
+        appendMergeCandidates(res.files);
+      }
+    });
+  }
+
+  if (mergeRemoveBtn) {
+    mergeRemoveBtn.addEventListener('click', () => {
+      if (selectedMergeIndex < 0 || selectedMergeIndex >= mergeItems.length) return;
+      mergeItems.splice(selectedMergeIndex, 1);
+      if (selectedMergeIndex >= mergeItems.length) {
+        selectedMergeIndex = mergeItems.length - 1;
+      }
+      mergeFileError.textContent = '';
+      renderMergeList();
+    });
+  }
+
+  if (mergeMoveUpBtn) {
+    mergeMoveUpBtn.addEventListener('click', () => {
+      if (selectedMergeIndex <= 0) return;
+      const tmp = mergeItems[selectedMergeIndex - 1];
+      mergeItems[selectedMergeIndex - 1] = mergeItems[selectedMergeIndex];
+      mergeItems[selectedMergeIndex] = tmp;
+      selectedMergeIndex--;
+      renderMergeList();
+    });
+  }
+
+  if (mergeMoveDownBtn) {
+    mergeMoveDownBtn.addEventListener('click', () => {
+      if (selectedMergeIndex < 0 || selectedMergeIndex >= mergeItems.length - 1) return;
+      const tmp = mergeItems[selectedMergeIndex + 1];
+      mergeItems[selectedMergeIndex + 1] = mergeItems[selectedMergeIndex];
+      mergeItems[selectedMergeIndex] = tmp;
+      selectedMergeIndex++;
+      renderMergeList();
+    });
+  }
+
+  if (mergeCancelBtn) {
+    mergeCancelBtn.addEventListener('click', closeMergeModal);
+  }
+
+  if (mergeSubmitBtn) {
+    mergeSubmitBtn.addEventListener('click', async () => {
+      if (mergeItems.length < 2) {
+        mergeFileError.textContent = 'Select at least 2 PDF files to merge.';
+        return;
+      }
+      mergeFileError.textContent = '';
+      mergeSubmitBtn.disabled = true;
+      try {
+        const res = await window.viewerAPI.executePageOp({
+          op: 'merge',
+          items: mergeItems.map(it => it.bytes)
+        });
+        if (res && res.validationError) {
+          mergeFileError.textContent = res.validationError;
+          return;
+        }
+        closeMergeModal();
+      } catch (err) {
+        mergeFileError.textContent = err.message || String(err);
+      } finally {
+        mergeSubmitBtn.disabled = mergeItems.length < 2;
+      }
+    });
+  }
+
+  if (mergeOpsOverlay) {
+    mergeOpsOverlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeMergeModal();
+      }
     });
   }
 }
