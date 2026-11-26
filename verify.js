@@ -1,6 +1,20 @@
 const fs = require('fs');
 const path = require('path');
 
+function classifyWidgetType(annot) {
+  if (annot.fieldType === 'Tx') return 'text';
+  if (annot.fieldType === 'Btn') {
+    if (annot.checkBox) return 'checkbox';
+    if (annot.radioButton) return 'radio';
+    if (annot.pushButton) return 'button';
+    return 'button';
+  }
+  if (annot.fieldType === 'Ch') {
+    return annot.combo ? 'dropdown' : 'listbox';
+  }
+  return annot.fieldType || 'unknown';
+}
+
 async function verifyPDF(filePath) {
   if (!filePath) {
     console.error('Usage: node verify.js <pdf-path>');
@@ -38,8 +52,10 @@ async function verifyPDF(filePath) {
     Ink: 0,
     Stamp: 0,
     Link: 0,
+    Widget: 0,
     Other: 0
   };
+  const formFields = [];
   const failedPages = [];
 
   for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
@@ -80,6 +96,9 @@ async function verifyPDF(filePath) {
         } else if (subtype === 'Link' || typeId === 2) {
           typeName = 'Link';
           counts.Link++;
+        } else if (subtype === 'Widget' || typeId === 20) {
+          typeName = 'Widget';
+          counts.Widget++;
         } else {
           typeName = subtype || `Type_${typeId}`;
           counts.Other++;
@@ -91,7 +110,23 @@ async function verifyPDF(filePath) {
         console.log(`  Rect:      [${annot.rect ? annot.rect.map(n => Math.round(n * 100) / 100).join(', ') : 'none'}]`);
         console.log(`  Color:     ${annot.color ? JSON.stringify(Array.from(annot.color)) : 'default / none'}`);
 
-        if (typeName === 'Ink') {
+        if (typeName === 'Widget') {
+          const fieldName = annot.fieldName || annot.id || '(unnamed)';
+          const fieldType = classifyWidgetType(annot);
+          const fieldValue = annot.fieldValue !== undefined ? annot.fieldValue : '';
+          const readOnly = Boolean(annot.readOnly);
+          formFields.push({
+            name: fieldName,
+            fieldType,
+            value: fieldValue,
+            readOnly,
+            page: pageNum
+          });
+          console.log(`  Name:      "${fieldName}"`);
+          console.log(`  FieldType: ${fieldType}`);
+          console.log(`  Value:     ${JSON.stringify(fieldValue)}`);
+          console.log(`  ReadOnly:  ${readOnly}`);
+        } else if (typeName === 'Ink') {
           const pathCount = annot.inkLists ? annot.inkLists.length : (annot.paths ? annot.paths.length : 0);
           const thickness = annot.borderStyle && typeof annot.borderStyle.width === 'number'
             ? annot.borderStyle.width
@@ -131,6 +166,7 @@ async function verifyPDF(filePath) {
   console.log(`    Ink:                 ${counts.Ink}`);
   console.log(`    Stamp:               ${counts.Stamp}`);
   console.log(`    Link:                ${counts.Link}`);
+  console.log(`    Widget (Form Field): ${counts.Widget}`);
   console.log(`    Other:               ${counts.Other}`);
   console.log(`  Raw Byte Searches:`);
   console.log(`    /Type /Annot:        ${rawAnnotMatches}`);
@@ -151,6 +187,7 @@ async function verifyPDF(filePath) {
   return {
     totalAnnotations,
     counts,
+    formFields,
     rawMatches: {
       rawAnnotMatches,
       rawHighlightMatches,

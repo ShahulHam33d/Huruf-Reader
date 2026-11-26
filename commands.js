@@ -108,6 +108,17 @@ function setInvertColors(enabled) {
 }
 
 /**
+ * Set or toggle Highlight Form Fields.
+ * @param {boolean} [enabled]
+ * @returns {boolean}
+ */
+function setHighlightFormFields(enabled) {
+  if (!ctx || !ctx.toggleHighlightFormFields) return false;
+  const value = typeof enabled === 'boolean' ? enabled : undefined;
+  return ctx.toggleHighlightFormFields(value);
+}
+
+/**
  * Set annotation editor mode for a tab.
  * @param {string} [tabId]
  * @param {number} mode - pdfjs AnnotationEditorType value
@@ -295,6 +306,38 @@ async function movePages(tabId, rangeStr, toPosition) {
   return await ctx.movePages(targetId, rangeStr.trim(), toPosition);
 }
 
+/**
+ * List form fields in a tab's PDF.
+ * @param {string} [tabId]
+ * @returns {Promise<{success: boolean, fields?: Array, error?: string}>}
+ */
+async function listFormFields(tabId) {
+  if (!ctx || !ctx.listFormFields) return { success: false, error: 'Not initialized' };
+  const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
+  if (!targetId) return { success: false, error: 'No active tab' };
+  return await ctx.listFormFields(targetId);
+}
+
+/**
+ * Set a form field's value in a tab's PDF after validating type/options.
+ * @param {string} [tabId]
+ * @param {string} fieldName
+ * @param {string|boolean} value
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function setFormField(tabId, fieldName, value) {
+  if (!ctx || !ctx.setFormField) return { success: false, error: 'Not initialized' };
+  const targetId = typeof tabId === 'string' && tabId ? tabId : ctx.getActiveTabId();
+  if (!targetId) return { success: false, error: 'No active tab' };
+  if (typeof fieldName !== 'string' || fieldName.trim().length === 0) {
+    return { success: false, error: 'Field name or id is required.' };
+  }
+  if (value === undefined) {
+    return { success: false, error: 'Field value is required.' };
+  }
+  return await ctx.setFormField(targetId, fieldName.trim(), value);
+}
+
 module.exports = {
   initCommands,
   openFile,
@@ -303,6 +346,7 @@ module.exports = {
   saveAs,
   setDarkMode,
   setInvertColors,
+  setHighlightFormFields,
   setAnnotationMode,
   undo,
   redo,
@@ -312,6 +356,8 @@ module.exports = {
   splitPdf,
   mergePdfs,
   reorderPages,
-  movePages
+  movePages,
+  listFormFields,
+  setFormField
 };
 

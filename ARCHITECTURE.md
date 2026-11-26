@@ -77,3 +77,10 @@
 - **Merge (`mergePdfs`)**: Copies pages from 2–20 inputs (300 MB total cap) into a new `(merged)` tab marked unsaved. Probed on add so password-protected, damaged, or unreadable files are named in an inline error and excluded.
 - **Reorder & Move (`reorderPages`, `movePages`)**: `reorderPages` validates a full 1-based permutation of every page; `movePages` builds that order from the range parser (`toPosition = total + 1` appends to end) and opens `(edited) <name>`.
 - **Known Limits**: Merging and moving build a new `PDFDocument` via `copyPages`, which preserves page-level annotations/links but drops document-level `/Outlines` (bookmarks).
+
+## Interactive Forms (Phase 4A)
+- **PDF.js Form Layer**: `PDFViewer` uses `annotationMode: AnnotationMode.ENABLE_FORMS` so stock PDF.js widgets (text, multi-line text, checkbox, radio, dropdown, list box) render interactively, support `Tab`/`Shift+Tab`, and respect read-only flags.
+- **Highlight Form Fields**: `View > Highlight Form Fields` (off by default, persisted in `settings.json`) toggles a display-only `.highlight-form-fields` CSS class shading fillable fields without altering PDF bytes.
+- **Commit, Unsaved & Undo Safety**: Form edits write to `annotationStorage` and trigger the sticky unsaved flag and recovery tracking. `commitAnnotations()` blurs any focused `.annotationLayer` form element before `saveDocument()`. Text-like form inputs bypass annotation undo/redo (`document.execCommand('undo'/'redo')`).
+- **Commands**: `listFormFields(tabId)` and `setFormField(tabId, fieldName, value)` in `commands.js` validate field types/options over IPC and reject ambiguous names with an id prompt.
+- **Known Limits**: `enableScripting` remains `false` — JavaScript-based calculations, formatting, and validation do not run. XFA forms are not supported.

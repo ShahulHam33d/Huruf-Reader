@@ -114,3 +114,9 @@ node verify.js test-pdfs/Dream_Textbook.pdf
 - [ ] **Merge Limits & Bad Files**: Try adding a password-protected/damaged PDF, > 20 files, or > 300 MB total. Confirm an inline error names the problem and leaves invalid files out without crashing.
 - [ ] **Merge Result Tab**: Merge 2+ files. Confirm a new `(merged)` tab opens with the unsaved dot, source tabs/files are untouched, and `Save As` writes the merged PDF.
 - [ ] **Move Pages**: Open `Pages > Move Pages...`, enter a range and `"Move before page"` (including `total + 1` for end). Confirm `(edited) <name>` opens with pages in the new order and inline validation rejects bad ranges or positions (`Cancel` / `Esc` closes).
+
+### 11. Interactive Forms (Phase 4A)
+- [ ] **Fillable Widgets & Keyboard Navigation**: Open a fillable PDF form. Confirm text, multi-line text, checkboxes, radio buttons, dropdowns, and list boxes are editable, `Tab` / `Shift+Tab` moves between fields, and read-only fields cannot be edited.
+- [ ] **Highlight Form Fields**: Toggle `View > Highlight Form Fields` (off by default). Confirm fillable fields are shaded on screen, the setting persists across restart, and saved PDFs are unchanged.
+- [ ] **Unsaved Dot, Commit & Undo**: Edit a form field and confirm the red unsaved dot appears. Press `Ctrl+Z` / `Ctrl+Y` inside a focused text field and confirm it undoes/redoes typing rather than annotations. Leave the cursor inside a focused field and run `Save As`; reopen the saved file and confirm the typed value is preserved.
+- [ ] **Known limits**: JavaScript-dependent calculations, formatting, and validation do not run (`enableScripting: false`), and XFA forms are not supported.

@@ -89,6 +89,26 @@ contextBridge.exposeInMainWorld('viewerAPI', {
   },
   executePageOp: (payload) => {
     return ipcRenderer.invoke('execute-page-op', payload);
+  },
+  onListFormFields: (callback) => {
+    ipcRenderer.on('request-list-form-fields', async (event, replyChannel) => {
+      try {
+        const result = await callback();
+        ipcRenderer.send(replyChannel, result);
+      } catch (err) {
+        ipcRenderer.send(replyChannel, { success: false, error: err.message || String(err) });
+      }
+    });
+  },
+  onSetFormField: (callback) => {
+    ipcRenderer.on('request-set-form-field', async (event, payload, replyChannel) => {
+      try {
+        const result = await callback(payload);
+        ipcRenderer.send(replyChannel, result);
+      } catch (err) {
+        ipcRenderer.send(replyChannel, { success: false, error: err.message || String(err) });
+      }
+    });
   }
 });
 

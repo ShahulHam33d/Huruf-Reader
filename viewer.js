@@ -68,7 +68,7 @@ const pdfViewer = new pdfjsViewer.PDFViewer({
   eventBus,
   linkService,
   findController,
-  annotationMode: pdfjsLib.AnnotationMode.ENABLE_STORAGE,
+  annotationMode: pdfjsLib.AnnotationMode.ENABLE_FORMS,
   annotationEditorMode: pdfjsLib.AnnotationEditorType.NONE,
   annotationEditorHighlightColors: DEFAULT_HIGHLIGHT_COLORS,
   enableScripting: false,
@@ -278,6 +278,12 @@ function initAnnotationParamsUI() {
 }
 
 async function commitAnnotations() {
+  const activeEl = document.activeElement;
+  if (activeEl && activeEl !== document.body && activeEl.closest && activeEl.closest('.annotationLayer')) {
+    if (typeof activeEl.blur === 'function') {
+      activeEl.blur();
+    }
+  }
   if (pdfViewer && pdfjsLib && pdfjsLib.AnnotationEditorType) {
     try {
       pdfViewer.annotationEditorMode = { mode: pdfjsLib.AnnotationEditorType.NONE };
@@ -993,7 +999,7 @@ async function openDocument(bufferData) {
 }
 
 // Theme Application
-function applyTheme({ darkMode, invertColors }) {
+function applyTheme({ darkMode, invertColors, highlightFormFields }) {
   if (darkMode) {
     document.documentElement.classList.add('dark-theme');
   } else {
@@ -1005,6 +1011,41 @@ function applyTheme({ darkMode, invertColors }) {
   } else {
     document.documentElement.classList.remove('invert-page-colors');
   }
+
+  document.documentElement.classList.toggle('highlight-form-fields', Boolean(highlightFormFields));
+}
+
+function classifyWidgetFieldType(annot) {
+  if (annot.fieldType === 'Tx') return 'text';
+  if (annot.fieldType === 'Btn') {
+    if (annot.checkBox) return 'checkbox';
+    if (annot.radioButton) return 'radio';
+    return 'button';
+  }
+  if (annot.fieldType === 'Ch') {
+    return annot.combo ? 'dropdown' : 'listbox';
+  }
+  return annot.fieldType || 'unknown';
+}
+
+function isTextEditingElement(el) {
+  if (!el) return false;
+  if (el instanceof HTMLTextAreaElement || el.isContentEditable) return true;
+  if (el instanceof HTMLInputElement) {
+    return !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'image', 'range', 'color'].includes(el.type);
+  }
+  return false;
+}
+
+if (container) {
+  const onFormWidgetEdited = (e) => {
+    if (e.target && e.target.closest && e.target.closest('.annotationLayer')) {
+      changedSinceLastRecoveryWrite = true;
+      setTabUnsavedChanges(true, `form field ${e.type}`);
+    }
+  };
+  container.addEventListener('input', onFormWidgetEdited);
+  container.addEventListener('change', onFormWidgetEdited);
 }
 
 // Wire IPC from Preload
@@ -1063,11 +1104,7 @@ if (window.viewerAPI) {
 
   if (window.viewerAPI.onUndo) {
     window.viewerAPI.onUndo(() => {
-      const el = document.activeElement;
-      const isTextInput = (el instanceof HTMLInputElement && (el.type === 'text' || el.type === 'number')) ||
-                          el instanceof HTMLTextAreaElement ||
-                          el?.isContentEditable;
-      if (isTextInput) {
+      if (isTextEditingElement(document.activeElement)) {
         document.execCommand('undo');
         return;
       }
@@ -1081,11 +1118,7 @@ if (window.viewerAPI) {
 
   if (window.viewerAPI.onRedo) {
     window.viewerAPI.onRedo(() => {
-      const el = document.activeElement;
-      const isTextInput = (el instanceof HTMLInputElement && (el.type === 'text' || el.type === 'number')) ||
-                          el instanceof HTMLTextAreaElement ||
-                          el?.isContentEditable;
-      if (isTextInput) {
+      if (isTextEditingElement(document.activeElement)) {
         document.execCommand('redo');
         return;
       }
@@ -1437,6 +1470,119 @@ if (window.viewerAPI) {
         e.preventDefault();
         closeMergeModal();
       }
+    });
+  }
+
+  if (window.viewerAPI.onListFormFields) {
+    window.viewerAPI.onListFormFields(async () => {
+      if (!currentDoc) {
+        return { success: false, error: 'No document loaded.' };
+      }
+      const fields = [];
+      for (let pageNum = 1; pageNum <= currentDoc.numPages; pageNum++) {
+        const page = await currentDoc.getPage(pageNum);
+        const annots = await page.getAnnotations({ intent: 'display' });
+        for (const a of annots) {
+          if (a.subtype !== 'Widget') continue;
+          const type = classifyWidgetFieldType(a);
+          const stored = currentDoc.annotationStorage.has(a.id)
+            ? currentDoc.annotationStorage.getRawValue(a.id)
+            : null;
+          let value = stored && stored.value !== undefined ? stored.value : (a.fieldValue ?? '');
+          if (type === 'checkbox' && typeof value !== 'boolean') {
+            value = Boolean(value && value !== 'Off');
+          }
+          fields.push({
+            id: a.id,
+            name: a.fieldName || a.id,
+            type,
+            page: pageNum,
+            value,
+            readOnly: Boolean(a.readOnly)
+          });
+        }
+      }
+      return { success: true, fields };
+    });
+  }
+
+  if (window.viewerAPI.onSetFormField) {
+    window.viewerAPI.onSetFormField(async ({ fieldName, value }) => {
+      if (!currentDoc) {
+        return { success: false, error: 'No document loaded.' };
+      }
+      const widgets = [];
+      for (let pageNum = 1; pageNum <= currentDoc.numPages; pageNum++) {
+        const page = await currentDoc.getPage(pageNum);
+        const annots = await page.getAnnotations({ intent: 'display' });
+        for (const a of annots) {
+          if (a.subtype === 'Widget') {
+            widgets.push({ page: pageNum, annot: a, type: classifyWidgetFieldType(a) });
+          }
+        }
+      }
+
+      const idMatch = widgets.find(w => w.annot.id === fieldName);
+      const nameMatches = idMatch ? [idMatch] : widgets.filter(w => (w.annot.fieldName || w.annot.id) === fieldName);
+
+      if (nameMatches.length === 0) {
+        return { success: false, error: `Form field "${fieldName}" not found.` };
+      }
+
+      const allRadio = nameMatches.every(w => w.type === 'radio');
+      if (nameMatches.length > 1 && !allRadio) {
+        return {
+          success: false,
+          error: `Field name "${fieldName}" is not unique (${nameMatches.length} matches). Please specify the field id instead.`
+        };
+      }
+
+      const target = nameMatches[0];
+      if (target.annot.readOnly || (allRadio && nameMatches.some(w => w.annot.readOnly))) {
+        return { success: false, error: `Form field "${fieldName}" is read-only.` };
+      }
+
+      if (target.type === 'text') {
+        if (typeof value !== 'string') {
+          return { success: false, error: `Field "${fieldName}" is a text field and requires a string value.` };
+        }
+        currentDoc.annotationStorage.setValue(target.annot.id, { value });
+      } else if (target.type === 'checkbox') {
+        if (typeof value !== 'boolean') {
+          return { success: false, error: `Field "${fieldName}" is a checkbox and requires true or false.` };
+        }
+        currentDoc.annotationStorage.setValue(target.annot.id, { value });
+      } else if (target.type === 'dropdown' || target.type === 'listbox') {
+        const allowed = (target.annot.options || []).map(o => o.exportValue ?? o.displayValue);
+        if (typeof value !== 'string' || !allowed.includes(value)) {
+          return { success: false, error: `Invalid option "${value}" for "${fieldName}". Allowed: ${allowed.join(', ')}.` };
+        }
+        currentDoc.annotationStorage.setValue(target.annot.id, { value });
+      } else if (target.type === 'radio') {
+        const allowed = nameMatches.map(w => w.annot.buttonValue).filter(v => v !== undefined);
+        if (typeof value !== 'string' || !allowed.includes(value)) {
+          return { success: false, error: `Invalid option "${value}" for radio "${fieldName}". Allowed: ${allowed.join(', ')}.` };
+        }
+        for (const w of nameMatches) {
+          currentDoc.annotationStorage.setValue(w.annot.id, { value: w.annot.buttonValue === value });
+        }
+      } else {
+        return { success: false, error: `Form field "${fieldName}" (type "${target.type}") cannot be set.` };
+      }
+
+      // Sync rendered DOM element if currently mounted
+      for (const w of nameMatches) {
+        const domEl = document.querySelector(`[data-annotation-id="${CSS.escape(w.annot.id)}"] :is(input, textarea, select)`);
+        if (domEl) {
+          if (w.type === 'checkbox') domEl.checked = Boolean(value);
+          else if (w.type === 'radio') domEl.checked = (w.annot.buttonValue === value);
+          else domEl.value = value;
+        }
+      }
+
+      changedSinceLastRecoveryWrite = true;
+      setTabUnsavedChanges(true, 'setFormField');
+      return { success: true, id: target.annot.id, name: target.annot.fieldName || target.annot.id, value };
     });
   }
 }

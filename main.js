@@ -220,7 +220,8 @@ async function openRecoveryFile(candidate) {
       buffer: fileBuffer,
       theme: {
         darkMode: settings.darkMode,
-        invertColors: settings.invertColors
+        invertColors: settings.invertColors,
+        highlightFormFields: settings.highlightFormFields
       },
       hasUnsavedChanges: true
     });
@@ -294,13 +295,14 @@ function loadSettings() {
       const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
       return {
         darkMode: Boolean(data.darkMode),
-        invertColors: Boolean(data.invertColors)
+        invertColors: Boolean(data.invertColors),
+        highlightFormFields: Boolean(data.highlightFormFields)
       };
     }
   } catch (err) {
     console.error('Error loading settings:', err);
   }
-  return { darkMode: false, invertColors: false };
+  return { darkMode: false, invertColors: false, highlightFormFields: false };
 }
 
 function saveSettings() {
@@ -315,7 +317,8 @@ function saveSettings() {
 function broadcastTheme() {
   const themePayload = {
     darkMode: settings.darkMode,
-    invertColors: settings.invertColors
+    invertColors: settings.invertColors,
+    highlightFormFields: settings.highlightFormFields
   };
 
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -641,7 +644,8 @@ async function openPDFPath(selectedPath) {
       buffer: fileBuffer,
       theme: {
         darkMode: settings.darkMode,
-        invertColors: settings.invertColors
+        invertColors: settings.invertColors,
+        highlightFormFields: settings.highlightFormFields
       },
       hasUnsavedChanges: false
     });
@@ -724,6 +728,7 @@ commands.initCommands({
   triggerSaveAs,
   toggleDarkMode,
   toggleInvertColors,
+  toggleHighlightFormFields,
   setTabAnnotationMode,
   undo: undoTab,
   redo: redoTab,
@@ -734,6 +739,8 @@ commands.initCommands({
   mergePdfs: mergePdfsMain,
   reorderPages: reorderPagesTab,
   movePages: movePagesTab,
+  listFormFields: listFormFieldsTab,
+  setFormField: setFormFieldTab,
   getActiveTabId: () => activeTabId
 });
 
@@ -751,6 +758,14 @@ function toggleInvertColors(forceVal) {
   broadcastTheme();
   updateMenu();
   return settings.invertColors;
+}
+
+function toggleHighlightFormFields(forceVal) {
+  settings.highlightFormFields = typeof forceVal === 'boolean' ? forceVal : !settings.highlightFormFields;
+  saveSettings();
+  broadcastTheme();
+  updateMenu();
+  return settings.highlightFormFields;
 }
 
 function updateMenu() {
@@ -811,6 +826,12 @@ function updateMenu() {
           type: 'checkbox',
           checked: settings.invertColors,
           click: (item) => commands.setInvertColors(item.checked)
+        },
+        {
+          label: 'Highlight Form Fields',
+          type: 'checkbox',
+          checked: settings.highlightFormFields,
+          click: (item) => commands.setHighlightFormFields(item.checked)
         }
       ]
     },
@@ -1394,7 +1415,8 @@ async function openEditedBuffer(sourceTab, newBytes, options = {}) {
       buffer: fileBuffer,
       theme: {
         darkMode: settings.darkMode,
-        invertColors: settings.invertColors
+        invertColors: settings.invertColors,
+        highlightFormFields: settings.highlightFormFields
       },
       hasUnsavedChanges: true
     });
@@ -1634,6 +1656,58 @@ ipcMain.handle('execute-page-op', async (event, payload) => {
     default:
       return { success: false, error: 'Unknown page operation.' };
   }
+});
+
+function requestTabFormAction(tab, channel, payload) {
+  if (!tab || !tab.view || tab.view.webContents.isDestroyed()) {
+    return Promise.resolve({ success: false, error: 'Tab is not available.' });
+  }
+  return new Promise((resolve) => {
+    const replyChannel = `form-reply-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    let settled = false;
+    const finish = (res) => {
+      if (settled) return;
+      settled = true;
+      resolve(res);
+    };
+    ipcMain.once(replyChannel, (event, res) => {
+      finish(res || { success: false, error: 'Empty response.' });
+    });
+    if (payload !== undefined) {
+      tab.view.webContents.send(channel, payload, replyChannel);
+    } else {
+      tab.view.webContents.send(channel, replyChannel);
+    }
+    setTimeout(() => {
+      ipcMain.removeAllListeners(replyChannel);
+      finish({ success: false, error: 'Timed out waiting for viewer response.' });
+    }, 5000);
+  });
+}
+
+async function listFormFieldsTab(tabId) {
+  const tab = tabs.find(t => t.id === tabId);
+  if (!tab) return { success: false, error: 'Tab not found.' };
+  return await requestTabFormAction(tab, 'request-list-form-fields');
+}
+
+async function setFormFieldTab(tabId, fieldName, value) {
+  const tab = tabs.find(t => t.id === tabId);
+  if (!tab) return { success: false, error: 'Tab not found.' };
+  return await requestTabFormAction(tab, 'request-set-form-field', { fieldName, value });
+}
+
+ipcMain.handle('list-form-fields', async (event, tabId) => {
+  const senderTab = tabs.find(t => t.view && t.view.webContents === event.sender);
+  return await commands.listFormFields(tabId || (senderTab && senderTab.id));
+});
+
+ipcMain.handle('set-form-field', async (event, payload) => {
+  if (!payload || typeof payload !== 'object') {
+    return { success: false, error: 'Invalid payload.' };
+  }
+  const senderTab = tabs.find(t => t.view && t.view.webContents === event.sender);
+  return await commands.setFormField(payload.tabId || (senderTab && senderTab.id), payload.fieldName, payload.value);
 });
 
 app.whenReady().then(() => {
